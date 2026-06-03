@@ -151,8 +151,6 @@ html.light .hdr-logo{background:#0c1526;border-color:rgba(52,211,153,0.40)}
 .btn-danger:hover{background:rgba(248,113,113,.18)}
 .btn-ai{background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple-bd)}
 .btn-ai:hover{background:rgba(192,132,252,.18)}
-.btn-busywork{background:rgba(96,165,250,.10);color:var(--blue);border:1px solid var(--blue-bd)}
-.btn-busywork:hover{background:rgba(96,165,250,.18)}
 .btn-sm{padding:5px 10px;font-size:12px}
 
 /* TOOLBAR */
@@ -621,7 +619,6 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
 const KEY        = 'groundwork_v2';
 const PREFS_KEY  = 'groundwork_prefs';
 const BACKUP_KEY = 'groundwork_backups';
-const BW_KEY     = 'busywork_incoming'; // shared key Busywork reads
 
 let STATE = { activeId:'', projects:[] };
 
@@ -946,6 +943,7 @@ function switchTab(tab) {
   document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
   if(tab==='meetings')  renderMeetings();
   if(tab==='decisions') renderDecisions();
+  if(tab==='ai')        refreshAIResults();
   updateCounts();
 }
 
@@ -1082,7 +1080,6 @@ function renderMeetings() {
         ${decs.length?`<div class="section-lbl">⚖️ Decisions</div><div style="margin-bottom:12px">${decs.map(d=>`<span class="dec-pill">${hl(esc(d),q)}</span>`).join('')}</div>`:''}
         ${acts.length?`<div class="section-lbl">✅ Action Items</div><div style="margin-bottom:12px">${acts.map(a=>`<div class="action-chip">${hl(esc(a),q)}</div>`).join('')}</div>`:''}
         <div class="mtg-footer">
-          ${hasActions?`<button class="btn btn-busywork btn-sm" onclick="pushToBusywork('${m.id}')">→ Send Actions to Busywork</button>`:''}
           <button class="btn btn-ghost btn-sm" onclick="openMtgModal('${m.id}')">✏️ Edit</button>
           <button class="btn btn-danger btn-sm" onclick="delMtg('${m.id}')">🗑 Delete</button>
         </div>
@@ -1092,30 +1089,6 @@ function renderMeetings() {
 }
 
 function toggleMtg(id){ document.getElementById('mc-'+id).classList.toggle('open'); }
-
-// ── BUSYWORK INTEGRATION ─────────────────────────────────
-function pushToBusywork(meetingId) {
-  const m=P().meetings.find(x=>x.id===meetingId); if(!m) return;
-  const acts=m.actions?m.actions.split('\n').filter(a=>a.trim()):[];
-  if(!acts.length){showToast('No action items to send');return;}
-
-  const items=acts.map(line=>{
-    const colonIdx=line.indexOf(':');
-    let owner='',text=line;
-    if(colonIdx>0&&colonIdx<20){owner=line.slice(0,colonIdx).trim();text=line.slice(colonIdx+1).trim();}
-      const dueMatch=text.match(/\(([^)]+)\)\s*$/);
-    const due=dueMatch?dueMatch[1]:null;
-    if(dueMatch) text=text.replace(dueMatch[0],'').trim();
-    return {id:uid(),text,owner,due,projectName:P().name||'',projectId:STATE.activeId,source:'Groundwork',sourceId:meetingId,addedAt:new Date().toISOString(),complete:false};
-  });
-
-  try {
-    const existing=JSON.parse(localStorage.getItem(BW_KEY)||'{"items":[]}');
-    existing.items=[...items,...existing.items].slice(0,200);
-    localStorage.setItem(BW_KEY,JSON.stringify(existing));
-    showToast(`${items.length} action${items.length!==1?'s':''} sent to Busywork`);
-  } catch(e) { showToast('Could not write to Busywork storage'); }
-}
 
 // ═══════════════════════════════════════════════════════
 // DECISIONS
@@ -1272,19 +1245,40 @@ async function runAI(type) {
   } catch(err){pushAIResult(type,null,`Error: ${err.message}`);}
 }
 
-function getOrCreate(type){let el=document.getElementById('air-'+type);if(!el){el=document.createElement('div');el.id='air-'+type;el.className='ai-result-block';document.getElementById('ai-results').prepend(el);}return el;}
+// ── PER-PROJECT AI RESULT STORE ──────────────────────────────
+// _aiStore[projectId][type] = { raw, err }
+const _aiStore = {};
 
-function pushAILoading(type){
-  const el=getOrCreate(type);
-  el.innerHTML=`<div class="ai-result-hd">✦ ${AI_LABELS[type]}</div><div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;
+function getProjectAI(pid) {
+  if (!_aiStore[pid]) _aiStore[pid] = {};
+  return _aiStore[pid];
 }
 
-// Raw data store for copy-to-clipboard
-const _aiRaw = {};
+function getOrCreate(type) {
+  let el = document.getElementById('air-'+type);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'air-'+type;
+    el.className = 'ai-result-block';
+    document.getElementById('ai-results').prepend(el);
+  }
+  return el;
+}
+
+function pushAILoading(type) {
+  const el = getOrCreate(type);
+  el.innerHTML = `<div class="ai-result-hd">✦ ${AI_LABELS[type]}</div><div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;
+}
 
 function pushAIResult(type, text, err=null) {
+  const pid = STATE.activeId;
+  getProjectAI(pid)[type] = { raw: text, err };
+  _renderResult(type, text, err, pid);
+}
+
+function _renderResult(type, text, err, pid) {
+  if (pid !== STATE.activeId) return;
   const el = getOrCreate(type);
-  _aiRaw[type] = text;
 
   let body;
   if (err) {
@@ -1297,14 +1291,29 @@ function pushAIResult(type, text, err=null) {
     body = renderTextResult(text);
   }
 
+  const extraBtn = (!err && type==='debrief')
+    ? `<button class="btn btn-secondary btn-sm" onclick="saveDebriefAsMeeting()">Save Meeting</button>`
+    : '';
+
   el.innerHTML = `
     <div class="ai-result-hd">✦ ${AI_LABELS[type]}
       <div class="ai-result-actions">
-        ${!err ? `<button class="btn btn-secondary btn-sm" onclick="copyAIResult('${type}')">⎘ Copy</button>` : ''}
+        ${extraBtn}
+        ${!err ? `<button class="btn btn-secondary btn-sm" onclick="copyAIResult('${type}')">⎆ Copy</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="this.closest('.ai-result-block').remove()">✕</button>
       </div>
     </div>
     ${body}`;
+}
+
+// Re-render stored results for the active project
+function refreshAIResults() {
+  const container = document.getElementById('ai-results');
+  container.innerHTML = '';
+  const store = getProjectAI(STATE.activeId);
+  [...Object.entries(store)].reverse().forEach(([type, {raw, err}]) => {
+    _renderResult(type, raw, err, STATE.activeId);
+  });
 }
 
 // ── JSON HELPER — strips markdown fences before parsing ─────
@@ -1423,7 +1432,9 @@ function renderTextResult(text) {
 
 // ── COPY TO CLIPBOARD ────────────────────────────────────────
 function copyAIResult(type) {
-  const raw = _aiRaw[type];
+  const store = getProjectAI(STATE.activeId);
+  const entry = store[type];
+  const raw = entry?.raw;
   if (!raw) return;
 
   let text = '';
@@ -1477,6 +1488,61 @@ function fallbackCopy(text) {
   try { document.execCommand('copy'); showToast('Copied to clipboard'); }
   catch(e) { showToast('Copy failed — select and copy manually'); }
   document.body.removeChild(ta);
+}
+
+// ── DEBRIEF → MEETING ────────────────────────────────────────
+function extractDebriefSections(text) {
+  // Split debrief text into labelled sections by detecting ALL-CAPS headers
+  const sections = {};
+  let current = null;
+  const buf = [];
+
+  function flush() { if (current) sections[current] = buf.join('\n').trim(); }
+
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    const letters = t.replace(/[^a-zA-Z]/g,'');
+    const isHdr = t.length >= 3 && t.length <= 72 && !t.endsWith('.')
+      && letters.length >= 3
+      && (t.match(/[A-Z]/g)||[]).length / letters.length > 0.72;
+
+    if (isHdr) { flush(); current = t; buf.length = 0; }
+    else if (current) buf.push(line);
+  }
+  flush();
+  return sections;
+}
+
+function saveDebriefAsMeeting() {
+  const entry = getProjectAI(STATE.activeId).debrief;
+  if (!entry || !entry.raw) { showToast('No debrief to save'); return; }
+
+  const sections = extractDebriefSections(entry.raw);
+
+  // Map section keys to meeting fields (case-insensitive key match)
+  function findSection(keyword) {
+    const key = Object.keys(sections).find(k => k.toUpperCase().includes(keyword));
+    if (!key) return '';
+    const val = sections[key].trim();
+    return (val.toLowerCase() === 'none' || val === '-') ? '' : val;
+  }
+
+  const decisions = findSection('DECISION');
+  const actions   = findSection('ACTION');
+  // Notes = full debrief text so nothing is lost
+  const notes = entry.raw;
+
+  switchTab('meetings');
+  setTimeout(() => {
+    openMtgModal();
+    document.getElementById('mDate').value      = today();
+    document.getElementById('mTitle').value     = '';
+    document.getElementById('mNotes').value     = notes;
+    document.getElementById('mDecisions').value = decisions;
+    document.getElementById('mActions').value   = actions;
+    document.getElementById('mTitle').focus();
+    showToast('Debrief loaded — add a title and save');
+  }, 80);
 }
 
 function primeExtract(){document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
@@ -1547,6 +1613,7 @@ function renderAll(){
   const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
   if (activeTab==='meetings')  renderMeetings();
   if (activeTab==='decisions') renderDecisions();
+  if (activeTab==='ai')        refreshAIResults();
   renderProjBar();
   updateCounts();
 }
