@@ -1225,7 +1225,27 @@ const PROMPTS={
   changerequest:(ctx,change)=>({system:`Draft a formal change request brief: Change Title, Description, Justification, Scope Impact, Timeline Impact, Resource/Cost Impact, Risks of Implementing, Risks of Not Implementing, Recommendation, Approvals Required. Plain structured text.`,user:`PROJECT CONTEXT:\n${ctx}\n\nPROPOSED CHANGE:\n${change}`}),
   scope:       ctx=>({system:`Review project scope and identify: scope creep risks, gaps, ambiguous boundaries, and clarification recommendations. Clear structured text.`,user:`Scope review:\n\n${ctx}`}),
   stakeholder: ctx=>({system:`Draft a concise internal project update email (150-200 words) for the executive sponsor. Direct professional tone. Include: current phase, accomplishments, decisions needed, top risks, next milestones, and a clear ask if action needed. Include subject line.`,user:`Draft sponsor update:\n\n${ctx}`}),
-  debrief:     (ctx,notes)=>({system:`Write a structured meeting debrief with these sections: Meeting Summary (2-3 sentences), Decisions Made (bullets or "None"), Action Items (owner/action/due or "None"), Open Questions (or "None"), Key Discussion Points (brief bullets). Concise and scannable.`,user:`PROJECT CONTEXT:\n${ctx}\n\nRAW MEETING NOTES:\n${notes}`}),
+  debrief:     (ctx,notes)=>({system:`You are a project coordinator writing a structured meeting debrief. Use these EXACT section headers (written in ALL CAPS) in this order:
+
+ATTENDEES
+List every participant identified in the transcript — names and/or roles. If no names are identifiable, write "Not identified".
+
+MEETING SUMMARY
+2-3 sentences on the meeting purpose and outcome.
+
+DECISIONS MADE
+One decision per line starting with a dash. Write "None" if no decisions were made.
+
+ACTION ITEMS
+One per line: "Owner: Action item (Due: date if mentioned)". Write "None" if no action items.
+
+OPEN QUESTIONS
+One per line starting with a dash. Write "None" if none.
+
+KEY DISCUSSION POINTS
+Brief bullet points of the main topics covered.
+
+Be concise and scannable. Use only the section headers above — no extra headers or sub-headers.`,user:`PROJECT CONTEXT:\n${ctx}\n\nMEETING TRANSCRIPT / NOTES:\n${notes}`}),
   ask:         (ctx,q)=>({system:`You are an intelligent project assistant. Answer using the project data provided. Be specific and concise.`,user:`PROJECT DATA:\n${ctx}\n\nQUESTION: ${q}`})
 };
 
@@ -1662,30 +1682,63 @@ function saveDebriefAsMeeting(resultId) {
 
   const sections = extractDebriefSections(entry.raw);
 
-  // Map section keys to meeting fields (case-insensitive key match)
   function findSection(keyword) {
     const key = Object.keys(sections).find(k => k.toUpperCase().includes(keyword));
     if (!key) return '';
     const val = sections[key].trim();
-    return (val.toLowerCase() === 'none' || val === '-') ? '' : val;
+    const empty = ['none','not identified','-','n/a',''];
+    return empty.includes(val.toLowerCase()) ? '' : val;
   }
 
-  const decisions = findSection('DECISION');
-  const actions   = findSection('ACTION');
-  // Notes = full debrief text so nothing is lost
-  const notes = entry.raw;
+  const attendeesRaw = findSection('ATTEND');
+  const decisionsRaw = findSection('DECISION');
+  const actionsRaw   = findSection('ACTION');
+  const notes        = entry.raw;
+
+  // Normalise attendees to a comma-separated string for the Attendees field
+  const attendeeText = parseAttendeeList(attendeesRaw);
+
+  // Parse decisions and log each as a formal entry in the Decisions register
+  const decisionLines = parseListItems(decisionsRaw);
+  decisionLines.forEach(text => {
+    P().decisions.unshift({
+      id: uid(), date: today(), madeBy: '', status: 'final',
+      text, rationale: 'Logged from meeting debrief.', impact: ''
+    });
+  });
+  if (decisionLines.length) { save(); updateCounts(); }
 
   switchTab('meetings');
   setTimeout(() => {
     openMtgModal();
     document.getElementById('mDate').value      = today();
     document.getElementById('mTitle').value     = '';
+    document.getElementById('mAttendees').value = attendeeText;
     document.getElementById('mNotes').value     = notes;
-    document.getElementById('mDecisions').value = decisions;
-    document.getElementById('mActions').value   = actions;
+    document.getElementById('mDecisions').value = decisionsRaw;
+    document.getElementById('mActions').value   = actionsRaw;
     document.getElementById('mTitle').focus();
-    showToast('Debrief loaded — add a title and save');
+    const n = decisionLines.length;
+    showToast(`Debrief loaded${n ? ` · ${n} decision${n>1?'s':''} added to log` : ''} — add a title and save`);
   }, 80);
+}
+
+// Strip bullet/number markers and return clean non-empty strings
+function parseListItems(text) {
+  if (!text) return [];
+  return text.split('\n')
+    .map(l => l.replace(/^[\s\-\u2022\u25cf\u25aa*\d.)\]]+/, '').trim())
+    .filter(l => l && l.toLowerCase() !== 'none');
+}
+
+// Normalise a bullet list or comma string of attendee names into "A, B, C" format
+function parseAttendeeList(text) {
+  if (!text) return '';
+  const lines = text.split('\n')
+    .map(l => l.replace(/^[\s\-\u2022\u25cf\u25aa*]+/, '').trim())
+    .filter(Boolean);
+  // Multi-line → join; single line that's already comma-separated → return as-is
+  return lines.length > 1 ? lines.join(', ') : lines[0] || '';
 }
 
 function primeExtract(){document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
