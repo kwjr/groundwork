@@ -218,6 +218,24 @@ html.light .hdr-logo{background:#0c1526;border-color:rgba(52,211,153,0.40)}
 .ai-result-hd{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--purple);margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .ai-result-hd button{margin-left:auto}
 .ai-result-text{font-size:13px;color:var(--text-muted);line-height:1.75;white-space:pre-wrap}
+/* Structured text renderer */
+.ai-text-body{font-size:13px;line-height:1.7}
+.ai-sec-hd{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin:16px 0 6px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+.ai-sec-hd:first-child{margin-top:0}
+.ai-para{color:var(--text-muted);margin-bottom:5px}
+.ai-label-line{color:var(--text-muted);margin-bottom:5px}
+.ai-label-line strong{color:var(--text);font-weight:600}
+.ai-bullet{display:flex;gap:8px;color:var(--text-muted);margin-bottom:3px;padding-left:4px}
+.ai-bullet-dot{color:var(--accent);flex-shrink:0;font-size:16px;line-height:1.4}
+.ai-numbered{display:flex;gap:8px;color:var(--text-muted);margin-bottom:3px;padding-left:4px}
+.ai-num{color:var(--text-dim);font-size:11px;font-weight:700;min-width:18px;padding-top:2px;flex-shrink:0}
+.ai-arrow{color:var(--green);font-size:13px;margin-bottom:5px;padding-left:4px}
+.ai-check{display:flex;gap:8px;color:var(--text-muted);margin-bottom:5px;padding-left:4px;align-items:flex-start}
+.ai-check-box{font-size:14px;flex-shrink:0;min-width:18px;color:var(--text-dim)}
+.ai-check-box.checked{color:var(--green)}
+.ai-spacer{height:8px}
+/* Copy button */
+.ai-result-actions{margin-left:auto;display:flex;gap:6px}
 .risk-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .risk-row:last-child{border-bottom:none}
 .risk-lvl{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;flex-shrink:0;margin-top:2px}
@@ -1255,14 +1273,211 @@ async function runAI(type) {
 }
 
 function getOrCreate(type){let el=document.getElementById('air-'+type);if(!el){el=document.createElement('div');el.id='air-'+type;el.className='ai-result-block';document.getElementById('ai-results').prepend(el);}return el;}
-function pushAILoading(type){const el=getOrCreate(type);el.innerHTML=`<div class="ai-result-hd">✦ ${AI_LABELS[type]}</div><div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;}
-function pushAIResult(type,text,err=null){
+
+function pushAILoading(type){
   const el=getOrCreate(type);
-  let body=err?`<div style="color:var(--red);font-size:13px">${esc(err)}</div>`:type==='risks'?renderRisks(text):type==='extract'?renderExtracted(text):`<div class="ai-result-text">${esc(text)}</div>`;
-  el.innerHTML=`<div class="ai-result-hd">✦ ${AI_LABELS[type]}<button class="btn btn-ghost btn-sm" onclick="this.closest('.ai-result-block').remove()">✕</button></div>${body}`;
+  el.innerHTML=`<div class="ai-result-hd">✦ ${AI_LABELS[type]}</div><div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;
 }
-function renderRisks(json){try{return JSON.parse(json).map(r=>`<div class="risk-row"><span class="risk-lvl r-${r.level}">${r.level}</span><div><div class="risk-title">${esc(r.risk)}</div><div class="risk-detail">${esc(r.detail)}</div><div class="risk-mit">→ ${esc(r.mitigation)}</div></div></div>`).join('');}catch(e){return`<div class="ai-result-text">${esc(json)}</div>`;}}
-function renderExtracted(json){const clr={high:'var(--red)',medium:'var(--amber)',low:'var(--green)'};try{return JSON.parse(json).map(a=>`<div class="action-chip" style="margin-bottom:6px"><span style="color:${clr[a.priority]||'var(--text-muted)'};font-size:10px">●</span><div style="flex:1"><div style="font-size:13px;color:var(--text)">${esc(a.action)}</div><div style="font-size:11px;color:var(--text-dim)">${a.owner?`Owner: ${esc(a.owner)}`:''}${a.due?` · Due: ${esc(a.due)}`:''}</div></div></div>`).join('');}catch(e){return`<div class="ai-result-text">${esc(json)}</div>`;}}
+
+// Raw data store for copy-to-clipboard
+const _aiRaw = {};
+
+function pushAIResult(type, text, err=null) {
+  const el = getOrCreate(type);
+  _aiRaw[type] = text;
+
+  let body;
+  if (err) {
+    body = `<div style="color:var(--red);font-size:13px">${esc(err)}</div>`;
+  } else if (type==='risks') {
+    body = renderRisks(text);
+  } else if (type==='extract') {
+    body = renderExtracted(text);
+  } else {
+    body = renderTextResult(text);
+  }
+
+  el.innerHTML = `
+    <div class="ai-result-hd">✦ ${AI_LABELS[type]}
+      <div class="ai-result-actions">
+        ${!err ? `<button class="btn btn-secondary btn-sm" onclick="copyAIResult('${type}')">⎘ Copy</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('.ai-result-block').remove()">✕</button>
+      </div>
+    </div>
+    ${body}`;
+}
+
+// ── JSON HELPER — strips markdown fences before parsing ─────
+function parseAIJson(raw) {
+  const stripped = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/,'').trim();
+  return JSON.parse(stripped);
+}
+
+// ── RISK RENDERER ────────────────────────────────────────────
+function renderRisks(raw) {
+  try {
+    const risks = parseAIJson(raw);
+    if (!Array.isArray(risks)) throw new Error('not array');
+    return risks.map(r => `
+      <div class="risk-row">
+        <span class="risk-lvl r-${(r.level||'').toLowerCase()}">${esc(r.level||'?')}</span>
+        <div>
+          <div class="risk-title">${esc(r.risk||r.title||'')}</div>
+          <div class="risk-detail">${esc(r.detail||r.description||'')}</div>
+          <div class="risk-mit">→ ${esc(r.mitigation||r.recommendation||'')}</div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    return renderTextResult(raw);
+  }
+}
+
+// ── ACTION ITEM RENDERER ─────────────────────────────────────
+function renderExtracted(raw) {
+  const clr = {high:'var(--red)',medium:'var(--amber)',low:'var(--green)'};
+  try {
+    const items = parseAIJson(raw);
+    if (!Array.isArray(items)) throw new Error('not array');
+    return items.map(a => `
+      <div class="action-chip" style="margin-bottom:6px;align-items:flex-start">
+        <span style="color:${clr[(a.priority||'').toLowerCase()]||'var(--text-muted)'};font-size:16px;line-height:1.2;flex-shrink:0">☐</span>
+        <div style="flex:1">
+          <div style="font-size:13px;color:var(--text);font-weight:500">${esc(a.action||a.text||'')}</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:3px;display:flex;gap:12px;flex-wrap:wrap">
+            ${a.owner ? `<span>👤 ${esc(a.owner)}</span>` : ''}
+            ${a.due   ? `<span>📅 ${esc(a.due)}</span>`   : ''}
+            ${a.priority ? `<span style="color:${clr[a.priority.toLowerCase()]||'var(--text-dim)'}">● ${esc(a.priority)}</span>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    return renderTextResult(raw);
+  }
+}
+
+// ── PLAIN TEXT RENDERER — structured, readable ───────────────
+function renderTextResult(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  let html = '';
+
+  function isHeader(s) {
+    if (s.length > 72 || s.length < 3) return false;
+    if (s.endsWith('.') || s.endsWith(',')) return false;
+    const letters = s.replace(/[^a-zA-Z]/g,'');
+    if (letters.length < 3) return false;
+    return (s.match(/[A-Z]/g)||[]).length / letters.length > 0.72;
+  }
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const t = line.trim();
+
+    if (!t) { html += '<div class="ai-spacer"></div>'; continue; }
+
+    // Checkbox [ ] or [x]
+    if (/^\[[\sx]\]/i.test(t)) {
+      const checked = /^\[[xX]\]/.test(t);
+      const content = t.slice(3).trim();
+      html += `<div class="ai-check"><span class="ai-check-box${checked?' checked':''}">${checked?'✓':'☐'}</span><span>${esc(content)}</span></div>`;
+      continue;
+    }
+
+    // Numbered list
+    if (/^\d{1,2}[.)]\s/.test(t)) {
+      const m = t.match(/^(\d{1,2}[.)]\s*)(.*)/);
+      html += `<div class="ai-numbered"><span class="ai-num">${esc(m[1].trim())}</span><span>${esc(m[2])}</span></div>`;
+      continue;
+    }
+
+    // Bullets
+    if (/^[-•●*]\s/.test(t)) {
+      html += `<div class="ai-bullet"><span class="ai-bullet-dot">·</span><span>${esc(t.slice(2).trim())}</span></div>`;
+      continue;
+    }
+
+    // Arrow lines (recommendations, mitigations)
+    if (t.startsWith('→') || t.startsWith('->')) {
+      html += `<div class="ai-arrow">${esc(t)}</div>`;
+      continue;
+    }
+
+    // Section header (all-caps heuristic)
+    if (isHeader(t)) {
+      html += `<div class="ai-sec-hd">${esc(t)}</div>`;
+      continue;
+    }
+
+    // Label: Value lines (e.g. "Subject: Weekly Status")
+    const labelMatch = t.match(/^([A-Za-z][A-Za-z\s]{1,28}):\s(.+)/);
+    if (labelMatch) {
+      html += `<div class="ai-label-line"><strong>${esc(labelMatch[1])}:</strong> ${esc(labelMatch[2])}</div>`;
+      continue;
+    }
+
+    html += `<div class="ai-para">${esc(t)}</div>`;
+  }
+
+  return `<div class="ai-text-body">${html}</div>`;
+}
+
+// ── COPY TO CLIPBOARD ────────────────────────────────────────
+function copyAIResult(type) {
+  const raw = _aiRaw[type];
+  if (!raw) return;
+
+  let text = '';
+
+  if (type === 'risks') {
+    try {
+      const risks = parseAIJson(raw);
+      text = `RISK ANALYSIS — ${P().name||'Project'}\n${'─'.repeat(50)}\n\n`;
+      risks.forEach(r => {
+        text += `${(r.level||'?').toUpperCase()} RISK: ${r.risk||r.title||''}\n`;
+        text += `${r.detail||r.description||''}\n`;
+        text += `Mitigation: ${r.mitigation||r.recommendation||''}\n\n`;
+      });
+    } catch(e) { text = raw; }
+
+  } else if (type === 'extract') {
+    try {
+      const items = parseAIJson(raw);
+      text = `ACTION ITEMS\n${'─'.repeat(50)}\n\n`;
+      items.forEach(a => {
+        text += `☐  ${a.action||a.text||''}\n`;
+        const meta = [
+          a.owner    ? `Owner: ${a.owner}`       : '',
+          a.due      ? `Due: ${a.due}`            : '',
+          a.priority ? `Priority: ${a.priority}`  : ''
+        ].filter(Boolean).join('  |  ');
+        if (meta) text += `   ${meta}\n`;
+        text += '\n';
+      });
+    } catch(e) { text = raw; }
+
+  } else {
+    text = raw;
+  }
+
+  copyToClipboard(text.trim());
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(()=>showToast('Copied to clipboard')).catch(()=>fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); showToast('Copied to clipboard'); }
+  catch(e) { showToast('Copy failed — select and copy manually'); }
+  document.body.removeChild(ta);
+}
 
 function primeExtract(){document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
 function primeDebrief(){document.getElementById('askPrompt').placeholder='Paste your raw meeting notes here, then click Debrief Meeting…';document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
