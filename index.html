@@ -232,8 +232,9 @@ html.light .hdr-logo{background:#0c1526;border-color:rgba(52,211,153,0.40)}
 .ai-check-box{font-size:14px;flex-shrink:0;min-width:18px;color:var(--text-dim)}
 .ai-check-box.checked{color:var(--green)}
 .ai-spacer{height:8px}
-/* Copy button */
-.ai-result-actions{margin-left:auto;display:flex;gap:6px}
+/* Timestamp & copy button */
+.ai-result-ts{font-size:11px;color:var(--text-dim);font-weight:400;margin-left:8px;white-space:nowrap}
+.ai-result-actions{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
 .risk-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .risk-row:last-child{border-bottom:none}
 .risk-lvl{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;flex-shrink:0;margin-top:2px}
@@ -1064,7 +1065,6 @@ function renderMeetings() {
     const decs=m.decisions?m.decisions.split('\n').filter(d=>d.trim()):[];
     const acts=m.actions?m.actions.split('\n').filter(a=>a.trim()):[];
     const mod=relativeTime(m.updatedAt);
-    const hasActions=acts.length>0;
     return `<div class="meeting-card" id="mc-${m.id}">
       <div class="meeting-hdr" onclick="toggleMtg('${m.id}')">
         <span class="date-badge">${ds}</span>
@@ -1209,44 +1209,68 @@ const PROMPTS={
 
 const AI_LABELS={risks:'Risk Analysis',agenda:'Meeting Agenda',summary:'Project Summary',extract:'Extracted Action Items',changerequest:'Change Request Brief',scope:'Scope Review',stakeholder:'Sponsor Update',debrief:'Meeting Debrief',ask:'Answer'};
 
+// ── SINGLETON vs LOG tool classification ─────────────────────
+// Singleton tools: replace existing output when re-run
+// Log tools: append new timestamped entry each run
+const SINGLETON_TYPES = new Set(['risks', 'summary', 'scope']);
+
 async function runAI(type) {
-  const ctx=buildCtx();
-  if(!ctx.trim()&&type!=='extract'&&type!=='ask'&&type!=='debrief'&&type!=='changerequest'){
-    pushAIResult(type,null,'⚠️ No project data found. Add charter details or log meetings first.'); return;
+  const ctx = buildCtx();
+  if (!ctx.trim() && type!=='extract' && type!=='ask' && type!=='debrief' && type!=='changerequest') {
+    const rid = SINGLETON_TYPES.has(type) ? type : uid();
+    pushAIResult(type, rid, null, '⚠️ No project data found. Add charter details or log meetings first.');
+    return;
   }
-  if(type==='ask'){const q=document.getElementById('askPrompt').value.trim();if(!q){document.getElementById('askPrompt').focus();return;}}
-  if(['extract','debrief','changerequest'].includes(type)){
-    const n=document.getElementById('askPrompt').value.trim();
-    if(!n){const ph={extract:'Paste raw meeting notes here, then click Extract Actions…',debrief:'Paste raw meeting notes here, then click Debrief Meeting…',changerequest:'Describe the proposed change here, then click Draft Change Request…'};document.getElementById('askPrompt').placeholder=ph[type];document.getElementById('askPrompt').focus();return;}
+  if (type==='ask') {
+    const q = document.getElementById('askPrompt').value.trim();
+    if (!q) { document.getElementById('askPrompt').focus(); return; }
+  }
+  if (['extract','debrief','changerequest'].includes(type)) {
+    const n = document.getElementById('askPrompt').value.trim();
+    if (!n) {
+      const ph = {
+        extract:       'Paste raw meeting notes here, then click Extract Actions…',
+        debrief:       'Paste raw meeting notes here, then click Debrief Meeting…',
+        changerequest: 'Describe the proposed change here, then click Draft Change Request…'
+      };
+      document.getElementById('askPrompt').placeholder = ph[type];
+      document.getElementById('askPrompt').focus();
+      return;
+    }
   }
 
-  pushAILoading(type);
+  // Singleton tools reuse a fixed resultId; log tools get a fresh uid each run
+  const resultId = SINGLETON_TYPES.has(type) ? type : uid();
+  pushAILoading(type, resultId);
 
-  // Build headers — use API key if set, otherwise rely on claude.ai injection
-  const headers={'Content-Type':'application/json','anthropic-version':'2023-06-01'};
-  const apiKey=getApiKey();
-  if(apiKey) {
-    headers['x-api-key']=apiKey;
-    headers['anthropic-dangerous-direct-browser-access']='true';
+  const headers = {'Content-Type':'application/json','anthropic-version':'2023-06-01'};
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers['x-api-key'] = apiKey;
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
   }
 
   try {
     let cfg;
-    if(type==='extract') cfg=PROMPTS.extract(document.getElementById('askPrompt').value.trim());
-    else if(type==='debrief') cfg=PROMPTS.debrief(ctx,document.getElementById('askPrompt').value.trim());
-    else if(type==='changerequest') cfg=PROMPTS.changerequest(ctx,document.getElementById('askPrompt').value.trim());
-    else if(type==='ask') cfg=PROMPTS.ask(ctx,document.getElementById('askPrompt').value.trim());
-    else cfg=PROMPTS[type](ctx);
+    if (type==='extract')       cfg = PROMPTS.extract(document.getElementById('askPrompt').value.trim());
+    else if (type==='debrief')  cfg = PROMPTS.debrief(ctx, document.getElementById('askPrompt').value.trim());
+    else if (type==='changerequest') cfg = PROMPTS.changerequest(ctx, document.getElementById('askPrompt').value.trim());
+    else if (type==='ask')      cfg = PROMPTS.ask(ctx, document.getElementById('askPrompt').value.trim());
+    else                        cfg = PROMPTS[type](ctx);
 
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers,body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,system:cfg.system,messages:[{role:'user',content:cfg.user}]})});
-    const data=await res.json();
-    if(data.error){pushAIResult(type,null,`API error: ${data.error.message}`);return;}
-    pushAIResult(type,(data.content||[]).map(c=>c.text||'').join(''));
-  } catch(err){pushAIResult(type,null,`Error: ${err.message}`);}
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers,
+      body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:1500, system:cfg.system, messages:[{role:'user',content:cfg.user}]})
+    });
+    const data = await res.json();
+    if (data.error) { pushAIResult(type, resultId, null, `API error: ${data.error.message}`); return; }
+    pushAIResult(type, resultId, (data.content||[]).map(c=>c.text||'').join(''));
+  } catch(err) { pushAIResult(type, resultId, null, `Error: ${err.message}`); }
 }
 
 // ── PER-PROJECT AI RESULT STORE ──────────────────────────────
-// _aiStore[projectId][type] = { raw, err }
+// Singleton: _aiStore[pid][type] = { raw, err, ts }
+// Log:       _aiStore[pid][type] = [{ resultId, raw, err, ts }, ...]
 const _aiStore = {};
 
 function getProjectAI(pid) {
@@ -1254,31 +1278,44 @@ function getProjectAI(pid) {
   return _aiStore[pid];
 }
 
-function getOrCreate(type) {
-  let el = document.getElementById('air-'+type);
+function pushAILoading(type, resultId) {
+  let el = document.getElementById('air-' + resultId);
   if (!el) {
     el = document.createElement('div');
-    el.id = 'air-'+type;
+    el.id = 'air-' + resultId;
     el.className = 'ai-result-block';
     document.getElementById('ai-results').prepend(el);
   }
-  return el;
-}
-
-function pushAILoading(type) {
-  const el = getOrCreate(type);
   el.innerHTML = `<div class="ai-result-hd">✦ ${AI_LABELS[type]}</div><div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;
 }
 
-function pushAIResult(type, text, err=null) {
+function pushAIResult(type, resultId, text, err=null) {
   const pid = STATE.activeId;
-  getProjectAI(pid)[type] = { raw: text, err };
-  _renderResult(type, text, err, pid);
+  const ts  = new Date().toISOString();
+  const store = getProjectAI(pid);
+
+  if (SINGLETON_TYPES.has(type)) {
+    store[type] = { raw: text, err, ts };
+  } else {
+    if (!Array.isArray(store[type])) store[type] = [];
+    // Remove any previous entry with same resultId (replace on re-render)
+    store[type] = store[type].filter(e => e.resultId !== resultId);
+    store[type].unshift({ resultId, raw: text, err, ts });
+  }
+
+  _renderResult(type, resultId, text, err, ts, pid);
 }
 
-function _renderResult(type, text, err, pid) {
+function _renderResult(type, resultId, text, err, ts, pid) {
   if (pid !== STATE.activeId) return;
-  const el = getOrCreate(type);
+
+  let el = document.getElementById('air-' + resultId);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'air-' + resultId;
+    el.className = 'ai-result-block';
+    document.getElementById('ai-results').prepend(el);
+  }
 
   let body;
   if (err) {
@@ -1291,28 +1328,68 @@ function _renderResult(type, text, err, pid) {
     body = renderTextResult(text);
   }
 
+  const isSingleton = SINGLETON_TYPES.has(type);
+  const tsLabel = (!isSingleton && ts)
+    ? new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})
+    : '';
+
+  const dismissFn = isSingleton
+    ? `dismissSingleton('${type}')`
+    : `dismissLogEntry('${type}','${resultId}')`;
+
   const extraBtn = (!err && type==='debrief')
-    ? `<button class="btn btn-secondary btn-sm" onclick="saveDebriefAsMeeting()">Save Meeting</button>`
+    ? `<button class="btn btn-secondary btn-sm" onclick="saveDebriefAsMeeting('${resultId}')">Save Meeting</button>`
     : '';
 
   el.innerHTML = `
-    <div class="ai-result-hd">✦ ${AI_LABELS[type]}
+    <div class="ai-result-hd">✦ ${AI_LABELS[type]}${tsLabel ? `<span class="ai-result-ts">${tsLabel}</span>` : ''}
       <div class="ai-result-actions">
         ${extraBtn}
-        ${!err ? `<button class="btn btn-secondary btn-sm" onclick="copyAIResult('${type}')">⎆ Copy</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="this.closest('.ai-result-block').remove()">✕</button>
+        ${!err ? `<button class="btn btn-secondary btn-sm" onclick="copyAIResult('${type}','${resultId}')">⎘ Copy</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="${dismissFn}">✕</button>
       </div>
     </div>
     ${body}`;
 }
 
+function dismissSingleton(type) {
+  delete getProjectAI(STATE.activeId)[type];
+  const el = document.getElementById('air-' + type);
+  if (el) el.remove();
+}
+
+function dismissLogEntry(type, resultId) {
+  const store = getProjectAI(STATE.activeId);
+  if (Array.isArray(store[type])) {
+    store[type] = store[type].filter(e => e.resultId !== resultId);
+    if (!store[type].length) delete store[type];
+  }
+  const el = document.getElementById('air-' + resultId);
+  if (el) el.remove();
+}
+
 // Re-render stored results for the active project
 function refreshAIResults() {
-  const container = document.getElementById('ai-results');
-  container.innerHTML = '';
+  document.getElementById('ai-results').innerHTML = '';
   const store = getProjectAI(STATE.activeId);
-  [...Object.entries(store)].reverse().forEach(([type, {raw, err}]) => {
-    _renderResult(type, raw, err, STATE.activeId);
+  const pid   = STATE.activeId;
+
+  // Render singletons first (prepend → they appear at bottom of results)
+  ['scope','summary','risks'].forEach(type => {
+    const e = store[type];
+    if (e) _renderResult(type, type, e.raw, e.err, e.ts, pid);
+  });
+
+  // Collect log entries, sort oldest→newest so prepend puts newest at top
+  const logEntries = [];
+  Object.keys(store).forEach(type => {
+    if (!SINGLETON_TYPES.has(type) && Array.isArray(store[type])) {
+      store[type].forEach(e => logEntries.push({type, ...e}));
+    }
+  });
+  logEntries.sort((a,b) => new Date(a.ts)-new Date(b.ts));
+  logEntries.forEach(({type, resultId, raw, err, ts}) => {
+    _renderResult(type, resultId, raw, err, ts, pid);
   });
 }
 
@@ -1431,10 +1508,16 @@ function renderTextResult(text) {
 }
 
 // ── COPY TO CLIPBOARD ────────────────────────────────────────
-function copyAIResult(type) {
+function copyAIResult(type, resultId) {
   const store = getProjectAI(STATE.activeId);
-  const entry = store[type];
-  const raw = entry?.raw;
+  let raw;
+
+  if (SINGLETON_TYPES.has(type)) {
+    raw = store[type]?.raw;
+  } else {
+    const entries = Array.isArray(store[type]) ? store[type] : [];
+    raw = entries.find(e => e.resultId === resultId)?.raw;
+  }
   if (!raw) return;
 
   let text = '';
@@ -1513,8 +1596,10 @@ function extractDebriefSections(text) {
   return sections;
 }
 
-function saveDebriefAsMeeting() {
-  const entry = getProjectAI(STATE.activeId).debrief;
+function saveDebriefAsMeeting(resultId) {
+  const store = getProjectAI(STATE.activeId);
+  const entries = Array.isArray(store.debrief) ? store.debrief : [];
+  const entry = entries.find(e => e.resultId === resultId) || entries[0];
   if (!entry || !entry.raw) { showToast('No debrief to save'); return; }
 
   const sections = extractDebriefSections(entry.raw);

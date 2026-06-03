@@ -1,8 +1,8 @@
 {
-  "name": "Groundwork — The Works",
+  "name": "Groundwork",
   "short_name": "Groundwork",
   "description": "Project planning, charter, meeting log, and AI insights",
-  "start_url": "./groundwork.html",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0c1526",
   "theme_color": "#0c1526",
