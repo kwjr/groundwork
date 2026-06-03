@@ -511,7 +511,7 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
       <button class="btn btn-ai" onclick="runAI('stakeholder')">Draft Update</button></div>
     <div class="ai-card"><div class="ai-card-ico">🗒️</div><div class="ai-card-title">Meeting Debrief</div>
       <div class="ai-card-desc">Paste notes from a just-finished meeting to get a structured summary: decisions, actions, open questions, and a shareable recap.</div>
-      <button class="btn btn-ai" onclick="primeDebrief()">Debrief Meeting</button></div>
+      <button class="btn btn-ai" onclick="openDebriefModal()">Debrief Meeting</button></div>
   </div>
   <div class="ask-section">
     <div class="card-hd" style="margin-bottom:12px">✦ Ask Groundwork</div>
@@ -525,6 +525,27 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
 </section>
 
 </main>
+
+<!-- DEBRIEF MODAL -->
+<div id="debriefModal" class="overlay hidden" role="dialog" aria-modal="true">
+  <div class="modal" style="max-width:660px">
+    <div class="modal-title">🗒️ Meeting Debrief</div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">Paste your meeting transcript or notes below, or upload a plain-text file (.txt, .md, .vtt). The AI will produce a structured debrief with a summary, decisions, action items, open questions, and key discussion points.</p>
+    <div class="field">
+      <label>Transcript / Meeting Notes</label>
+      <textarea id="debriefInput" rows="14" placeholder="Paste meeting transcript, notes, or minutes here…" style="resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('debriefFile').click()">📎 Upload file (.txt, .md, .vtt)</button>
+      <input type="file" id="debriefFile" accept=".txt,.md,.vtt,.csv" class="hidden" onchange="loadDebriefFile(event)">
+      <span id="debriefFileName" style="font-size:12px;color:var(--text-muted)"></span>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDebriefModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="runDebriefFromModal()">▶ Run Debrief</button>
+    </div>
+  </div>
+</div>
 
 <!-- DECISION MODAL -->
 <div id="decModal" class="overlay hidden" role="dialog" aria-modal="true">
@@ -1080,6 +1101,7 @@ function renderMeetings() {
         ${decs.length?`<div class="section-lbl">⚖️ Decisions</div><div style="margin-bottom:12px">${decs.map(d=>`<span class="dec-pill">${hl(esc(d),q)}</span>`).join('')}</div>`:''}
         ${acts.length?`<div class="section-lbl">✅ Action Items</div><div style="margin-bottom:12px">${acts.map(a=>`<div class="action-chip">${hl(esc(a),q)}</div>`).join('')}</div>`:''}
         <div class="mtg-footer">
+          <button class="btn btn-ghost btn-sm" onclick="debriefMeeting('${m.id}')">🗒 Debrief</button>
           <button class="btn btn-ghost btn-sm" onclick="openMtgModal('${m.id}')">✏️ Edit</button>
           <button class="btn btn-danger btn-sm" onclick="delMtg('${m.id}')">🗑 Delete</button>
         </div>
@@ -1214,23 +1236,31 @@ const AI_LABELS={risks:'Risk Analysis',agenda:'Meeting Agenda',summary:'Project 
 // Log tools: append new timestamped entry each run
 const SINGLETON_TYPES = new Set(['risks', 'summary', 'scope']);
 
+// Debrief input is staged here by the modal before runAI is called
+let _pendingDebriefText = '';
+// One AbortController per resultId so any in-flight request can be cancelled
+const _abortControllers = {};
+
 async function runAI(type) {
   const ctx = buildCtx();
-  if (!ctx.trim() && type!=='extract' && type!=='ask' && type!=='debrief' && type!=='changerequest') {
+
+  if (!ctx.trim() && !['extract','ask','debrief','changerequest'].includes(type)) {
     const rid = SINGLETON_TYPES.has(type) ? type : uid();
     pushAIResult(type, rid, null, '⚠️ No project data found. Add charter details or log meetings first.');
     return;
   }
-  if (type==='ask') {
+  if (type === 'ask') {
     const q = document.getElementById('askPrompt').value.trim();
     if (!q) { document.getElementById('askPrompt').focus(); return; }
   }
-  if (['extract','debrief','changerequest'].includes(type)) {
+  if (type === 'debrief') {
+    if (!_pendingDebriefText.trim()) { openDebriefModal(); return; }
+  }
+  if (['extract','changerequest'].includes(type)) {
     const n = document.getElementById('askPrompt').value.trim();
     if (!n) {
       const ph = {
         extract:       'Paste raw meeting notes here, then click Extract Actions…',
-        debrief:       'Paste raw meeting notes here, then click Debrief Meeting…',
         changerequest: 'Describe the proposed change here, then click Draft Change Request…'
       };
       document.getElementById('askPrompt').placeholder = ph[type];
@@ -1239,8 +1269,10 @@ async function runAI(type) {
     }
   }
 
-  // Singleton tools reuse a fixed resultId; log tools get a fresh uid each run
   const resultId = SINGLETON_TYPES.has(type) ? type : uid();
+  if (_abortControllers[resultId]) _abortControllers[resultId].abort();
+  const controller = new AbortController();
+  _abortControllers[resultId] = controller;
   pushAILoading(type, resultId);
 
   const headers = {'Content-Type':'application/json','anthropic-version':'2023-06-01'};
@@ -1252,20 +1284,40 @@ async function runAI(type) {
 
   try {
     let cfg;
-    if (type==='extract')       cfg = PROMPTS.extract(document.getElementById('askPrompt').value.trim());
-    else if (type==='debrief')  cfg = PROMPTS.debrief(ctx, document.getElementById('askPrompt').value.trim());
-    else if (type==='changerequest') cfg = PROMPTS.changerequest(ctx, document.getElementById('askPrompt').value.trim());
-    else if (type==='ask')      cfg = PROMPTS.ask(ctx, document.getElementById('askPrompt').value.trim());
-    else                        cfg = PROMPTS[type](ctx);
+    if (type === 'extract')          cfg = PROMPTS.extract(document.getElementById('askPrompt').value.trim());
+    else if (type === 'debrief')     cfg = PROMPTS.debrief(ctx, _pendingDebriefText);
+    else if (type === 'changerequest') cfg = PROMPTS.changerequest(ctx, document.getElementById('askPrompt').value.trim());
+    else if (type === 'ask')         cfg = PROMPTS.ask(ctx, document.getElementById('askPrompt').value.trim());
+    else                             cfg = PROMPTS[type](ctx);
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST', headers,
+      method: 'POST', headers, signal: controller.signal,
       body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:1500, system:cfg.system, messages:[{role:'user',content:cfg.user}]})
     });
     const data = await res.json();
     if (data.error) { pushAIResult(type, resultId, null, `API error: ${data.error.message}`); return; }
     pushAIResult(type, resultId, (data.content||[]).map(c=>c.text||'').join(''));
-  } catch(err) { pushAIResult(type, resultId, null, `Error: ${err.message}`); }
+  } catch(err) {
+    if (err.name === 'AbortError') {
+      const el = document.getElementById('air-' + resultId);
+      if (el) el.remove();
+      if (SINGLETON_TYPES.has(type)) {
+        delete getProjectAI(STATE.activeId)[type];
+      } else {
+        const store = getProjectAI(STATE.activeId);
+        if (Array.isArray(store[type])) {
+          store[type] = store[type].filter(e => e.resultId !== resultId);
+          if (!store[type].length) delete store[type];
+        }
+      }
+      showToast('Cancelled');
+      return;
+    }
+    pushAIResult(type, resultId, null, `Error: ${err.message}`);
+  } finally {
+    delete _abortControllers[resultId];
+    if (type === 'debrief') _pendingDebriefText = '';
+  }
 }
 
 // ── PER-PROJECT AI RESULT STORE ──────────────────────────────
@@ -1286,7 +1338,13 @@ function pushAILoading(type, resultId) {
     el.className = 'ai-result-block';
     document.getElementById('ai-results').prepend(el);
   }
-  el.innerHTML = `<div class="ai-result-hd">✦ ${AI_LABELS[type]}</div><div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;
+  el.innerHTML = `
+    <div class="ai-result-hd">✦ ${AI_LABELS[type]}
+      <div class="ai-result-actions">
+        <button class="btn btn-danger btn-sm" onclick="cancelAI('${resultId}')">◼ Stop</button>
+      </div>
+    </div>
+    <div class="spinner-wrap"><div class="spinner"></div>Analyzing project data…</div>`;
 }
 
 function pushAIResult(type, resultId, text, err=null) {
@@ -1631,7 +1689,61 @@ function saveDebriefAsMeeting(resultId) {
 }
 
 function primeExtract(){document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
-function primeDebrief(){document.getElementById('askPrompt').placeholder='Paste your raw meeting notes here, then click Debrief Meeting…';document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
+// ── DEBRIEF MODAL ────────────────────────────────────────────
+function openDebriefModal(meeting=null) {
+  const ta = document.getElementById('debriefInput');
+  document.getElementById('debriefFileName').textContent = '';
+  if (meeting) {
+    const parts = [];
+    if (meeting.title)     parts.push(`Meeting: ${meeting.title}`);
+    if (meeting.date)      parts.push(`Date: ${meeting.date}`);
+    if (meeting.attendees) parts.push(`Attendees: ${meeting.attendees}`);
+    if (meeting.notes)     parts.push(`\nNotes:\n${meeting.notes}`);
+    if (meeting.decisions) parts.push(`\nDecisions:\n${meeting.decisions}`);
+    if (meeting.actions)   parts.push(`\nAction Items:\n${meeting.actions}`);
+    ta.value = parts.join('\n');
+  } else {
+    ta.value = '';
+  }
+  document.getElementById('debriefModal').classList.remove('hidden');
+  setTimeout(() => ta.focus(), 60);
+}
+
+function closeDebriefModal() {
+  document.getElementById('debriefModal').classList.add('hidden');
+}
+
+function loadDebriefFile(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('debriefInput').value = ev.target.result;
+    document.getElementById('debriefFileName').textContent = '📄 ' + file.name;
+  };
+  reader.onerror = () => showToast('Could not read file');
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function runDebriefFromModal() {
+  const text = document.getElementById('debriefInput').value.trim();
+  if (!text) { document.getElementById('debriefInput').focus(); return; }
+  _pendingDebriefText = text;
+  closeDebriefModal();
+  switchTab('ai');
+  runAI('debrief');
+}
+
+function cancelAI(resultId) {
+  const ctrl = _abortControllers[resultId];
+  if (ctrl) ctrl.abort();
+}
+
+// Called from Meetings tab — opens debrief modal pre-filled with the meeting's content
+function debriefMeeting(meetingId) {
+  const m = P().meetings.find(x => x.id === meetingId);
+  if (m) openDebriefModal(m);
+}
 function primeChangeRequest(){document.getElementById('askPrompt').placeholder='Describe the proposed change — what is changing, why, and any known impacts…';document.getElementById('askPrompt').focus();document.getElementById('askPrompt').scrollIntoView({behavior:'smooth',block:'center'});}
 
 // ═══════════════════════════════════════════════════════
@@ -1713,10 +1825,10 @@ function showToast(msg){const t=document.createElement('div');t.className='toast
 
 // ── KEYBOARD & CLICK-OUTSIDE ──────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){closeDecModal();closeProjModal();closeSettings();closeProjDropdown();}
+  if(e.key==='Escape'){closeDecModal();closeProjModal();closeSettings();closeProjDropdown();closeDebriefModal();}
 });
 document.querySelectorAll('.overlay').forEach(o=>{
-  o.addEventListener('click',e=>{if(e.target===o){closeDecModal();closeProjModal();closeSettings();}});
+  o.addEventListener('click',e=>{if(e.target===o){closeDecModal();closeProjModal();closeSettings();closeDebriefModal();}});
 });
 document.addEventListener('click',e=>{
   const sw=document.getElementById('projSwitcher');
