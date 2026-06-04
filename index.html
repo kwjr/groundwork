@@ -1169,7 +1169,49 @@ function saveMtg() {
   if(!m.title){alert('Meeting title is required.');return;}
   if(id){const idx=P().meetings.findIndex(x=>x.id===id);P().meetings[idx]=m;}
   else  {P().meetings.unshift(m);}
+
+  // Only parse and log to tabs when creating a new meeting, not when editing
+  // (editing could re-log identical items already captured from a previous save)
+  let nd=0, na=0;
+  if (!id) {
+    const source = m.title + (m.date ? ' · ' + m.date : '');
+
+    // Decisions → Decisions tab
+    parseListItems(m.decisions).forEach(text => {
+      P().decisions.unshift({
+        id:uid(), date:m.date||today(), madeBy:'', status:'final',
+        text, rationale:`From meeting: ${source}`, impact:'',
+        loggedToPSA:false, psaDate:''
+      });
+      nd++;
+    });
+
+    // Actions → Actions tab
+    const actionNow = now;
+    parseListItems(m.actions).forEach(line => {
+      let owner='', text=line, dueDate='';
+      const ci = line.indexOf(': ');
+      if (ci>0 && ci<25) { owner=line.slice(0,ci).trim(); text=line.slice(ci+2).trim(); }
+      const dm = text.match(/\(Due:\s*([^)]+)\)\s*$/i);
+      if (dm) { dueDate=dm[1].trim(); text=text.slice(0,dm.index).trim(); }
+      P().actions.unshift({
+        id:nextActionId(), text, owner, dueDate,
+        priority:'Medium', status:'Open',
+        source, sourceId:m.id,
+        createdAt:actionNow, updatedAt:actionNow, completedAt:'',
+        loggedToPSA:false, psaDate:'', notes:''
+      });
+      na++;
+    });
+  }
+
   save(); closeMtgModal(); renderMeetings(); updateCounts();
+  if (nd||na) {
+    const parts=[];
+    if (nd) parts.push(`${nd} decision${nd>1?'s':''} logged`);
+    if (na) parts.push(`${na} action${na>1?'s':''} logged`);
+    showToast(parts.join(', '));
+  }
 }
 
 function delMtg(id) {
@@ -1910,7 +1952,33 @@ function saveDebriefAsMeeting(resultId) {
       text, rationale: 'Logged from meeting debrief.', impact: '', loggedToPSA:false, psaDate:''
     });
   });
-  if (decisionLines.length) { save(); updateCounts(); }
+
+  // Parse action items and log each to the Actions tab
+  const actionLines = parseListItems(actionsRaw);
+  const now = new Date().toISOString();
+  actionLines.forEach(line => {
+    // Parse "Owner: Action text (Due: date)" format
+    let owner = '', text = line, dueDate = '';
+    const colonIdx = line.indexOf(': ');
+    if (colonIdx > 0 && colonIdx < 25) {
+      owner = line.slice(0, colonIdx).trim();
+      text  = line.slice(colonIdx + 2).trim();
+    }
+    const dueMatch = text.match(/\(Due:\s*([^)]+)\)\s*$/i);
+    if (dueMatch) {
+      dueDate = dueMatch[1].trim();
+      text    = text.slice(0, dueMatch.index).trim();
+    }
+    P().actions.unshift({
+      id: nextActionId(), text, owner, dueDate,
+      priority: 'Medium', status: 'Open',
+      source: 'Meeting Debrief', sourceId: '',
+      createdAt: now, updatedAt: now, completedAt: '',
+      loggedToPSA: false, psaDate: '', notes: ''
+    });
+  });
+
+  if (decisionLines.length || actionLines.length) { save(); updateCounts(); }
 
   switchTab('meetings');
   setTimeout(() => {
@@ -1922,8 +1990,11 @@ function saveDebriefAsMeeting(resultId) {
     document.getElementById('mDecisions').value = decisionsRaw;
     document.getElementById('mActions').value   = actionsRaw;
     document.getElementById('mTitle').focus();
-    const n = decisionLines.length;
-    showToast(`Debrief loaded${n ? ` · ${n} decision${n>1?'s':''} added to log` : ''} — add a title and save`);
+    const nd = decisionLines.length, na = actionLines.length;
+    const parts = [];
+    if (nd) parts.push(`${nd} decision${nd>1?'s':''} logged`);
+    if (na) parts.push(`${na} action${na>1?'s':''} logged`);
+    showToast(`Debrief loaded${parts.length ? ' · ' + parts.join(', ') : ''} — add a title and save`);
   }, 80);
 }
 
