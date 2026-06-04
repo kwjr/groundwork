@@ -316,6 +316,42 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 @keyframes slideUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* -- ACTION ITEMS ----------------------------------------------------------- */
+.action-item-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:8px;animation:fadeUp .2s ease;transition:border-color .15s}
+.action-item-card:hover{border-color:var(--border2)}
+.action-item-card.psa-done{border-left:3px solid var(--green);opacity:.7}
+.action-item-card.overdue-card{border-left:3px solid var(--red)}
+.ai-card-row{display:flex;align-items:flex-start;gap:10px}
+.ai-id{font-size:11px;font-weight:700;color:var(--text-dim);min-width:38px;padding-top:2px;flex-shrink:0}
+.ai-main{flex:1;min-width:0}
+.ai-desc{font-size:14px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:4px}
+.ai-meta-row{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--text-dim);align-items:center;margin-bottom:4px}
+.ai-notes-text{font-size:12px;color:var(--text-muted);margin-top:2px}
+.ai-card-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap;align-items:center}
+.pdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.pd-high{background:var(--red)}.pd-medium{background:var(--amber)}.pd-low{background:var(--green)}
+.act-status{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px}
+.as-open{background:var(--blue-bg);color:var(--blue)}
+.as-inprogress{background:var(--amber-bg);color:var(--amber)}
+.as-complete{background:var(--green-bg);color:var(--green)}
+.as-cancelled{background:var(--surface2);color:var(--text-dim)}
+.overdue-tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--red-bg);color:var(--red);text-transform:uppercase}
+.psa-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);display:inline-flex;align-items:center;gap:4px}
+.btn-psa{background:transparent;color:var(--text-dim);border:1px solid var(--border2);border-radius:var(--rs);font-size:11px;font-weight:600;padding:3px 10px;transition:all .15s;font-family:var(--font);cursor:pointer}
+.btn-psa:hover{border-color:var(--green-bd);color:var(--green);background:var(--green-bg)}
+.filter-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.filter-btn{background:var(--surface2);border:1px solid var(--border2);border-radius:20px;color:var(--text-muted);font-size:12px;font-weight:500;padding:4px 12px;transition:all .15s;font-family:var(--font);cursor:pointer}
+.filter-btn:hover{border-color:var(--border3);color:var(--text)}
+.filter-btn.factive{background:var(--green-bg);border-color:var(--green-bd);color:var(--green)}
+.filter-btn.factive.f-overdue{background:var(--red-bg);border-color:var(--red-bd);color:var(--red)}
+/* -- ANALYSIS TAB ----------------------------------------------------------- */
+.analysis-sec{margin-bottom:20px}
+.analysis-sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.analysis-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);display:flex;align-items:center;gap:7px}
+.analysis-entry{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:10px;animation:fadeUp .2s ease}
+.analysis-entry-hd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.analysis-ts{font-size:11px;color:var(--text-dim)}
 .hidden{display:none!important}
 .tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:var(--surface2);color:var(--text-muted);border:1px solid var(--border)}
 </style>
@@ -344,6 +380,8 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
   <button class="tab-btn active" data-tab="charter"  onclick="switchTab('charter')"  role="tab">📋 Charter</button>
   <button class="tab-btn" data-tab="meetings"  onclick="switchTab('meetings')" role="tab">📝 Meetings  <span class="cnt" id="cnt-meetings">0</span></button>
   <button class="tab-btn" data-tab="decisions" onclick="switchTab('decisions')"role="tab">⚖️ Decisions <span class="cnt" id="cnt-decisions">0</span></button>
+  <button class="tab-btn" data-tab="actions"   onclick="switchTab('actions')"  role="tab">✅ Actions <span class="cnt" id="cnt-actions"></span></button>
+  <button class="tab-btn" data-tab="analysis"  onclick="switchTab('analysis')" role="tab">📊 Analysis</button>
   <button class="tab-btn" data-tab="ai"        onclick="switchTab('ai')"       role="tab">✦ AI Insights</button>
 </nav>
 
@@ -534,7 +572,59 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
   <div id="ai-results"></div>
 </section>
 
+<!-- ACTIONS -->
+<section class="tab-pane hidden" id="pane-actions">
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="search" id="q-actions" placeholder="Search action items…" oninput="renderActions()">
+    </div>
+    <button class="btn btn-primary" onclick="openActionModal()">＋ Add Action</button>
+  </div>
+  <div class="filter-bar" id="actionFilterBar">
+    <button class="filter-btn factive"   data-filter="open"       onclick="setActionFilter('open')">Open</button>
+    <button class="filter-btn"           data-filter="inprogress" onclick="setActionFilter('inprogress')">In Progress</button>
+    <button class="filter-btn f-overdue" data-filter="overdue"    onclick="setActionFilter('overdue')">Overdue</button>
+    <button class="filter-btn"           data-filter="complete"   onclick="setActionFilter('complete')">Complete</button>
+    <button class="filter-btn"           data-filter="all"        onclick="setActionFilter('all')">All</button>
+  </div>
+  <div id="actions-list"></div>
+</section>
+
+<!-- ANALYSIS -->
+<section class="tab-pane hidden" id="pane-analysis">
+  <div id="analysis-content"></div>
+</section>
+
 </main>
+
+<!-- ACTION ITEM MODAL -->
+<div id="actionModal" class="overlay hidden" role="dialog" aria-modal="true">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-title">✅ <span id="actionModalLbl">Add Action Item</span></div>
+    <input type="hidden" id="actionId">
+    <div class="field"><label>Action Description *</label>
+      <textarea id="aText" rows="3" placeholder="What needs to be done?"></textarea></div>
+    <div class="two-col">
+      <div class="field"><label>Owner</label><input type="text" id="aOwner" placeholder="Name or role"></div>
+      <div class="field"><label>Due Date</label><input type="date" id="aDue"></div>
+    </div>
+    <div class="two-col">
+      <div class="field"><label>Priority</label>
+        <select id="aPriority"><option>High</option><option selected>Medium</option><option>Low</option></select></div>
+      <div class="field"><label>Status</label>
+        <select id="aStatus"><option selected>Open</option><option>In Progress</option><option>Complete</option><option>Cancelled</option></select></div>
+    </div>
+    <div class="field"><label>Source</label>
+      <input type="text" id="aSource" placeholder="e.g. Status Call 6/3, or Manual"></div>
+    <div class="field"><label>Notes</label>
+      <textarea id="aNotes" rows="2" placeholder="Additional context…"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeActionModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAction()">Save</button>
+    </div>
+  </div>
+</div>
 
 <!-- DEBRIEF MODAL -->
 <div id="debriefModal" class="overlay hidden" role="dialog" aria-modal="true">
@@ -666,7 +756,9 @@ function blankProject(name) {
     id:uid(), name:name||'', type:'', phase:'', billing:'', pm:'', sponsor:'',
     link:'', startDate:'', targetDate:'', rag:'',
     charter:{ scope:'', outOfScope:'', objectives:[], assumptions:[], constraints:[], successCriteria:[], stakeholders:[] },
-    meetings:[], decisions:[]
+    meetings:[], decisions:[],
+    actions:[],
+    aiContext:{ risks:null, scopeReviews:[], changeRequests:[] }
   };
 }
 
@@ -695,6 +787,11 @@ function migrate(raw) {
       if (!p.charter.stakeholders)    p.charter.stakeholders=[];
       if (!p.meetings)  p.meetings=[];
       if (!p.decisions) p.decisions=[];
+      if (!p.actions)   p.actions=[];
+      if (!p.aiContext) p.aiContext={ risks:null, scopeReviews:[], changeRequests:[] };
+      if (!p.aiContext.scopeReviews)   p.aiContext.scopeReviews=[];
+      if (!p.aiContext.changeRequests) p.aiContext.changeRequests=[];
+      p.decisions.forEach(d=>{ if(d.loggedToPSA===undefined){ d.loggedToPSA=false; d.psaDate=""; } });
     });
     return raw;
   }
@@ -977,6 +1074,8 @@ function switchTab(tab) {
   document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
   if(tab==='meetings')  renderMeetings();
   if(tab==='decisions') renderDecisions();
+  if(tab==='actions')   renderActions();
+  if(tab==='analysis')  renderAnalysis();
   if(tab==='ai')        refreshAIResults();
   updateCounts();
 }
@@ -1181,7 +1280,8 @@ function renderDecisions() {
           <div class="dec-text">${hl(esc(d.text),q)}</div>
           <div class="dec-meta"><span>📅 ${ds}</span>${d.madeBy?`<span>👤 ${esc(d.madeBy)}</span>`:''}<span class="status-pill s-${d.status}">${statusMap[d.status]}</span></div>
         </div>
-        <div style="display:flex;gap:6px;flex-shrink:0">
+        <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;align-items:center">
+          ${d.loggedToPSA?`<span class="psa-badge">✓ In PSA${d.psaDate?' · '+d.psaDate:''}</span>`:`<button class="btn-psa" onclick="toggleDecisionPSA('${d.id}')">Log to PSA</button>`}
           <button class="btn btn-ghost btn-sm" onclick="openDecModal('${d.id}')">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="delDec('${d.id}')">🗑</button>
         </div>
@@ -1335,9 +1435,20 @@ async function runAI(type) {
     else if (type === 'ask')         cfg = PROMPTS.ask(ctx, document.getElementById('askPrompt').value.trim());
     else                             cfg = PROMPTS[type](ctx);
 
+    const MODELS = {
+      risks:         'claude-sonnet-4-20250514',
+      summary:       'claude-sonnet-4-20250514',
+      scope:         'claude-sonnet-4-20250514',
+      changerequest: 'claude-sonnet-4-20250514',
+      agenda:        'claude-haiku-4-5-20251001',
+      extract:       'claude-haiku-4-5-20251001',
+      stakeholder:   'claude-haiku-4-5-20251001',
+      debrief:       'claude-haiku-4-5-20251001',
+      ask:           'claude-haiku-4-5-20251001',
+    };
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST', headers, signal: controller.signal,
-      body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:1500, system:cfg.system, messages:[{role:'user',content:cfg.user}]})
+      body: JSON.stringify({model: MODELS[type]||'claude-haiku-4-5-20251001', max_tokens:1500, system:cfg.system, messages:[{role:'user',content:cfg.user}]})
     });
     const data = await res.json();
     if (data.error) { pushAIResult(type, resultId, null, `API error: ${data.error.message}`); return; }
@@ -1407,6 +1518,20 @@ function pushAIResult(type, resultId, text, err=null) {
   }
 
   _renderResult(type, resultId, text, err, ts, pid);
+  if (!err && text && pid===STATE.activeId) {
+    if (type==='risks') {
+      P().aiContext.risks={raw:text,ts,resultId}; save();
+    } else if (type==='scope') {
+      P().aiContext.scopeReviews.unshift({id:resultId,raw:text,ts});
+      if(P().aiContext.scopeReviews.length>20)P().aiContext.scopeReviews.length=20;
+      save();
+    } else if (type==='changerequest') {
+      P().aiContext.changeRequests.unshift({id:resultId,raw:text,ts});
+      if(P().aiContext.changeRequests.length>20)P().aiContext.changeRequests.length=20;
+      save();
+    }
+    if(document.querySelector('.tab-btn.active')?.dataset.tab==='analysis')renderAnalysis();
+  }
 }
 
 function _renderResult(type, resultId, text, err, ts, pid) {
@@ -1782,7 +1907,7 @@ function saveDebriefAsMeeting(resultId) {
   decisionLines.forEach(text => {
     P().decisions.unshift({
       id: uid(), date: today(), madeBy: '', status: 'final',
-      text, rationale: 'Logged from meeting debrief.', impact: ''
+      text, rationale: 'Logged from meeting debrief.', impact: '', loggedToPSA:false, psaDate:''
     });
   });
   if (decisionLines.length) { save(); updateCounts(); }
@@ -1924,6 +2049,8 @@ function importData(e){
 function updateCounts(){
   document.getElementById('cnt-meetings').textContent=(P().meetings||[]).length;
   document.getElementById('cnt-decisions').textContent=(P().decisions||[]).length;
+  const openAct=(P().actions||[]).filter(a=>!a.loggedToPSA&&a.status!=='Complete'&&a.status!=='Cancelled').length;
+  const el=document.getElementById('cnt-actions');if(el)el.textContent=openAct?openAct:'';
 }
 
 function populateCharterFields(){
@@ -1942,6 +2069,8 @@ function renderAll(){
   const activeTab = document.querySelector('.tab-btn.active')?.dataset.tab;
   if (activeTab==='meetings')  renderMeetings();
   if (activeTab==='decisions') renderDecisions();
+  if (activeTab==='actions')   renderActions();
+  if (activeTab==='analysis')  renderAnalysis();
   if (activeTab==='ai')        refreshAIResults();
   renderProjBar();
   updateCounts();
@@ -1950,6 +2079,238 @@ function renderAll(){
 // ═══════════════════════════════════════════════════════
 // UTILITIES
 // ═══════════════════════════════════════════════════════
+
+// ================================================================
+// ACTION ITEMS
+// ================================================================
+let _actionFilter = 'open';
+
+function setActionFilter(f) {
+  _actionFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('factive', b.dataset.filter===f));
+  renderActions();
+}
+
+function nextActionId() {
+  const nums = (P().actions||[]).map(a => parseInt((a.id||'A0').slice(1))||0);
+  return 'A' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3,'0');
+}
+
+function isOverdue(a) {
+  if (!a.dueDate) return false;
+  if (a.loggedToPSA || a.status==='Complete' || a.status==='Cancelled') return false;
+  return a.dueDate < today();
+}
+
+function renderActions() {
+  const q  = (document.getElementById('q-actions')?.value||'').toLowerCase();
+  const el = document.getElementById('actions-list');
+  if (!el) return;
+  const all = P().actions||[];
+
+  const filtered = all.filter(a => {
+    const mq = !q || [a.text,a.owner,a.notes,a.source].join(' ').toLowerCase().includes(q);
+    if (!mq) return false;
+    if (_actionFilter==='open')       return a.status==='Open' && !a.loggedToPSA;
+    if (_actionFilter==='inprogress') return a.status==='In Progress' && !a.loggedToPSA;
+    if (_actionFilter==='overdue')    return isOverdue(a);
+    if (_actionFilter==='complete')   return a.status==='Complete' || a.loggedToPSA;
+    return true;
+  });
+
+  const pOrd = {High:0,Medium:1,Low:2};
+  filtered.sort((a,b) => {
+    const ad = a.loggedToPSA||a.status==='Complete'||a.status==='Cancelled';
+    const bd = b.loggedToPSA||b.status==='Complete'||b.status==='Cancelled';
+    if (ad!==bd) return ad?1:-1;
+    const pd = (pOrd[a.priority]||1)-(pOrd[b.priority]||1);
+    if (pd!==0) return pd;
+    if (a.dueDate&&b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+    return a.dueDate?-1:b.dueDate?1:0;
+  });
+
+  if (!filtered.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-ico">&#x2705;</div>
+      <div class="empty-msg">${q?'No matches found':_actionFilter==='all'?'No action items yet':'No items in this view'}</div>
+      <div class="empty-sub">${q?'Try a different search':_actionFilter==='all'?'Add your first action item':'Try switching filters'}</div>
+      ${!q&&_actionFilter==='all'?'<button class="btn btn-primary" onclick="openActionModal()">&#xff0b; Add Action</button>':''}
+    </div>`;
+    return;
+  }
+
+  const pDot = p => {
+    const cls = {High:'pd-high',Medium:'pd-medium',Low:'pd-low'}[p]||'';
+    return `<span class="pdot ${cls}" title="${esc(p||'')}"></span>`;
+  };
+  const sCls = s => ({'Open':'as-open','In Progress':'as-inprogress','Complete':'as-complete','Cancelled':'as-cancelled'}[s]||'as-open');
+
+  el.innerHTML = filtered.map(a => {
+    const od  = isOverdue(a);
+    const due = a.dueDate ? new Date(a.dueDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+    const cr  = a.createdAt ? relativeTime(a.createdAt) : '';
+    const psaBtn = a.loggedToPSA
+      ? `<span class="psa-badge">&#x2713; In PSA${a.psaDate?' &middot; '+a.psaDate:''}</span>`
+      : `<button class="btn-psa" onclick="toggleActionPSA('${a.id}')">Log to PSA</button>`;
+    return `<div class="action-item-card${a.loggedToPSA?' psa-done':od?' overdue-card':''}">
+      <div class="ai-card-row">
+        <span class="ai-id">${esc(a.id)}</span>
+        <div class="ai-main">
+          <div class="ai-desc">${hl(esc(a.text),q)}</div>
+          <div class="ai-meta-row">
+            ${pDot(a.priority)}
+            <span class="act-status ${sCls(a.status)}">${esc(a.status)}</span>
+            ${od?'<span class="overdue-tag">Overdue</span>':''}
+            ${a.owner?`<span>&#128100; ${hl(esc(a.owner),q)}</span>`:''}
+            ${due?`<span>&#128197; ${esc(due)}</span>`:''}
+            ${a.source?`<span>&#128204; ${hl(esc(a.source),q)}</span>`:''}
+            ${cr?`<span style="margin-left:auto;color:var(--text-dim)">${cr}</span>`:''}
+          </div>
+          ${a.notes?`<div class="ai-notes-text">${hl(esc(a.notes),q)}</div>`:''}
+        </div>
+      </div>
+      <div class="ai-card-footer">
+        ${psaBtn}
+        <button class="btn btn-ghost btn-sm" onclick="openActionModal('${a.id}')">&#x270f;&#xfe0f; Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="delAction('${a.id}')">&#x1f5d1; Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openActionModal(id=null) {
+  const a = id ? P().actions.find(x=>x.id===id) : null;
+  document.getElementById('actionId').value    = id||'';
+  document.getElementById('actionModalLbl').textContent = id?'Edit Action Item':'Add Action Item';
+  document.getElementById('aText').value       = a?a.text:'';
+  document.getElementById('aOwner').value      = a?a.owner:'';
+  document.getElementById('aDue').value        = a?a.dueDate:'';
+  document.getElementById('aPriority').value   = a?a.priority:'Medium';
+  document.getElementById('aStatus').value     = a?a.status:'Open';
+  document.getElementById('aSource').value     = a?a.source:'Manual';
+  document.getElementById('aNotes').value      = a?a.notes:'';
+  document.getElementById('actionModal').classList.remove('hidden');
+  setTimeout(()=>document.getElementById('aText').focus(),50);
+}
+function closeActionModal(){ document.getElementById('actionModal').classList.add('hidden'); }
+
+function saveAction() {
+  const id   = document.getElementById('actionId').value;
+  const text = document.getElementById('aText').value.trim();
+  if (!text){ document.getElementById('aText').focus(); return; }
+  const now  = new Date().toISOString();
+  const stat = document.getElementById('aStatus').value;
+  if (id) {
+    const idx = P().actions.findIndex(x=>x.id===id);
+    const ex  = P().actions[idx];
+    P().actions[idx] = { ...ex, text,
+      owner:document.getElementById('aOwner').value.trim(),
+      dueDate:document.getElementById('aDue').value,
+      priority:document.getElementById('aPriority').value,
+      status:stat,
+      source:document.getElementById('aSource').value.trim(),
+      notes:document.getElementById('aNotes').value.trim(),
+      updatedAt:now,
+      completedAt:stat==='Complete'&&ex.status!=='Complete'?now:ex.completedAt
+    };
+  } else {
+    P().actions.unshift({ id:nextActionId(), text,
+      owner:document.getElementById('aOwner').value.trim(),
+      dueDate:document.getElementById('aDue').value,
+      priority:document.getElementById('aPriority').value,
+      status:stat,
+      source:document.getElementById('aSource').value.trim(),
+      notes:document.getElementById('aNotes').value.trim(),
+      createdAt:now, updatedAt:now, completedAt:'',
+      loggedToPSA:false, psaDate:''
+    });
+  }
+  save(); closeActionModal(); renderActions(); updateCounts();
+}
+
+function delAction(id) {
+  if (!confirm('Delete this action item?')) return;
+  P().actions = P().actions.filter(x=>x.id!==id);
+  save(); renderActions(); updateCounts();
+}
+
+function toggleActionPSA(id) {
+  const a = P().actions.find(x=>x.id===id); if (!a) return;
+  if (!confirm(`Mark "${a.text.slice(0,60)}" as Logged to PSA?\n\nThis will mark it as complete.`)) return;
+  a.loggedToPSA=true; a.psaDate=today(); a.status='Complete';
+  a.completedAt=new Date().toISOString(); a.updatedAt=a.completedAt;
+  save(); renderActions(); updateCounts(); showToast('Logged to PSA');
+}
+
+function toggleDecisionPSA(id) {
+  const d = P().decisions.find(x=>x.id===id); if (!d) return;
+  if (!confirm(`Mark "${d.text.slice(0,60)}" as Logged to PSA?`)) return;
+  d.loggedToPSA=true; d.psaDate=today();
+  save(); renderDecisions(); showToast('Decision logged to PSA');
+}
+
+// ================================================================
+// ANALYSIS TAB
+// ================================================================
+function renderAnalysis() {
+  const el = document.getElementById('analysis-content');
+  if (!el) return;
+  const ctx = P().aiContext || {};
+
+  function secHtml(title, icon, data, type, singleton) {
+    const has = singleton ? !!data : !!(data&&data.length);
+    const empty = `<div class="empty" style="padding:24px">
+      <div class="empty-ico">${icon}</div>
+      <div class="empty-msg">No ${title.toLowerCase()} saved yet</div>
+      <div class="empty-sub">Run the tool in AI Insights &mdash; results auto-save here</div>
+      <button class="btn btn-ghost btn-sm" onclick="switchTab('ai')">Go to AI Insights</button>
+    </div>`;
+
+    let items = '';
+    if (singleton) {
+      if (data) {
+        const ts = data.ts ? new Date(data.ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+        const body = type==='risks' ? renderRisks(data.raw) : renderTextResult(data.raw);
+        items = `<div class="analysis-entry">
+          <div class="analysis-entry-hd">
+            <span class="analysis-ts">Last run: ${ts}</span>
+            <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="delAnalysisItem('${type}',null)">&#x2715; Remove</button>
+          </div>${body}</div>`;
+      }
+    } else {
+      items = (data||[]).map(e => {
+        const ts = e.ts ? new Date(e.ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+        return `<div class="analysis-entry">
+          <div class="analysis-entry-hd">
+            <span class="analysis-ts">${ts}</span>
+            <button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="delAnalysisItem('${type}','${e.id}')">&#x2715; Remove</button>
+          </div>${renderTextResult(e.raw)}</div>`;
+      }).join('');
+    }
+
+    return `<div class="analysis-sec">
+      <div class="analysis-sec-hd">
+        <div class="analysis-sec-title">${icon} ${esc(title)}</div>
+        <button class="btn btn-ghost btn-sm" onclick="switchTab('ai')">Re-run &rarr;</button>
+      </div>
+      ${has ? items : empty}
+    </div>`;
+  }
+
+  el.innerHTML =
+    secHtml('Risk Analysis',   '&#x1f50d;', ctx.risks,          'risks',          true) +
+    secHtml('Scope Reviews',   '&#x1f5fa;', ctx.scopeReviews,   'scopeReviews',   false) +
+    secHtml('Change Requests', '&#x1f500;', ctx.changeRequests, 'changeRequests', false);
+}
+
+function delAnalysisItem(type, id) {
+  if (!confirm('Remove this entry?')) return;
+  if (type==='risks')          P().aiContext.risks = null;
+  else if (type==='scopeReviews')   P().aiContext.scopeReviews   = P().aiContext.scopeReviews.filter(e=>e.id!==id);
+  else if (type==='changeRequests') P().aiContext.changeRequests = P().aiContext.changeRequests.filter(e=>e.id!==id);
+  save(); renderAnalysis();
+}
+
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function hl(text,q){if(!q)return text;const re=new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`,'gi');return text.replace(re,'<mark class="hl">$1</mark>');}
@@ -1957,10 +2318,10 @@ function showToast(msg){const t=document.createElement('div');t.className='toast
 
 // ── KEYBOARD & CLICK-OUTSIDE ──────────────────────────────
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'){closeDecModal();closeProjModal();closeSettings();closeProjDropdown();closeDebriefModal();}
+  if(e.key==='Escape'){closeDecModal();closeProjModal();closeSettings();closeProjDropdown();closeDebriefModal();closeActionModal();}
 });
 document.querySelectorAll('.overlay').forEach(o=>{
-  o.addEventListener('click',e=>{if(e.target===o){closeDecModal();closeProjModal();closeSettings();closeDebriefModal();}});
+  o.addEventListener('click',e=>{if(e.target===o){closeDecModal();closeProjModal();closeSettings();closeDebriefModal();closeActionModal();}});
 });
 document.addEventListener('click',e=>{
   const sw=document.getElementById('projSwitcher');
