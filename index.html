@@ -235,6 +235,16 @@ html.light .hdr-logo{background:#0c1526;border-color:rgba(52,211,153,0.40)}
 /* Timestamp & copy button */
 .ai-result-ts{font-size:11px;color:var(--text-dim);font-weight:400;margin-left:8px;white-space:nowrap}
 .ai-result-actions{margin-left:auto;display:flex;gap:6px;flex-shrink:0}
+/* Project Summary status cards */
+.sum-grid{margin-bottom:4px}
+.sum-row{padding:10px 0;border-bottom:1px solid var(--border)}
+.sum-row:last-child{border-bottom:none}
+.sum-row-hd{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.sum-row-label{font-size:13px;font-weight:600;color:var(--text)}
+.sum-row-notes{font-size:13px;color:var(--text-muted);line-height:1.55;padding-left:0}
+.sum-act{padding:12px 0;border-top:1px solid var(--border)}
+.sum-act-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-muted);margin-bottom:5px}
+.sum-act-text{font-size:13px;color:var(--text-muted);line-height:1.55}
 .risk-row{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .risk-row:last-child{border-bottom:none}
 .risk-lvl{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;flex-shrink:0;margin-top:2px}
@@ -923,7 +933,9 @@ function renderProjDropdownList() {
   const list=document.getElementById('projDropdownList');
   document.getElementById('projCountBadge').textContent=`${STATE.projects.length} project${STATE.projects.length!==1?'s':''}`;
   const ragEmoji={'green':'🟢','amber':'🟡','red':'🔴','':''};
-  list.innerHTML=STATE.projects.map(proj=>{
+  list.innerHTML=[...STATE.projects]
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'',undefined,{sensitivity:'base'}))
+    .map(proj=>{
     const isActive=proj.id===STATE.activeId;
     const tags=[proj.type,proj.phase].filter(Boolean);
     const meta=[tags.join(' · '),(proj.meetings?.length||0)+'m '+(proj.decisions?.length||0)+'d'].filter(Boolean).join(' · ');
@@ -1220,7 +1232,20 @@ function buildCtx() {
 const PROMPTS={
   risks:       ctx=>({system:`Analyze project risks and return ONLY a JSON array. Each: {"level":"high"|"medium"|"low","risk":"short title","detail":"1-2 sentences","mitigation":"concrete mitigation"}. ONLY valid JSON.`,user:`Identify risks:\n\n${ctx}`}),
   agenda:      ctx=>({system:`Generate a structured next-meeting agenda as plain text with time-boxed sections. Tie items to actual project content. Be specific.`,user:`Next meeting agenda:\n\n${ctx}`}),
-  summary:     ctx=>({system:`Write an executive project status summary (300-400 words) covering: status, accomplishments, current phase, decisions, risks, next steps. Clear prose, no bullets.`,user:`Status summary:\n\n${ctx}`}),
+  summary:     ctx=>({system:`You are a project status analyst. Return ONLY a valid JSON object with these exact keys — no markdown, no preamble, no extra text:
+{
+  "projectStatus":      "Green" | "Amber" | "Red",
+  "projectStatusNotes": "string ≤250 chars",
+  "scheduleStatus":     "Green" | "Amber" | "Red",
+  "scheduleStatusNotes":"string ≤250 chars",
+  "financialStatus":    "Green" | "Amber" | "Red",
+  "financialStatusNotes":"string ≤250 chars",
+  "scopeStatus":        "Green" | "Amber" | "Red",
+  "scopeStatusNotes":   "string ≤250 chars",
+  "last30Days":         "string ≤250 chars — key accomplishments and activities",
+  "next30Days":         "string ≤250 chars — upcoming milestones and planned activities"
+}
+Rules: Status values must be exactly "Green", "Amber", or "Red". Each notes/activity field must be under 250 characters. For Amber or Red statuses, include the specific issue, the actions required, and timing to return to Green. Base your assessment on the charter, phase, meeting history, and decision log.`,user:`Generate a project status report for:\n\n${ctx}`}),
   extract:     notes=>({system:`Extract action items from meeting notes. Return ONLY JSON array: [{"owner":"name or TBD","action":"specific action","due":"date or null","priority":"high"|"medium"|"low"}]. ONLY valid JSON.`,user:notes}),
   changerequest:(ctx,change)=>({system:`Draft a formal change request brief: Change Title, Description, Justification, Scope Impact, Timeline Impact, Resource/Cost Impact, Risks of Implementing, Risks of Not Implementing, Recommendation, Approvals Required. Plain structured text.`,user:`PROJECT CONTEXT:\n${ctx}\n\nPROPOSED CHANGE:\n${change}`}),
   scope:       ctx=>({system:`Review project scope and identify: scope creep risks, gaps, ambiguous boundaries, and clarification recommendations. Clear structured text.`,user:`Scope review:\n\n${ctx}`}),
@@ -1402,6 +1427,8 @@ function _renderResult(type, resultId, text, err, ts, pid) {
     body = renderRisks(text);
   } else if (type==='extract') {
     body = renderExtracted(text);
+  } else if (type==='summary') {
+    body = renderSummary(text);
   } else {
     body = renderTextResult(text);
   }
@@ -1519,6 +1546,42 @@ function renderExtracted(raw) {
   }
 }
 
+// ── PROJECT SUMMARY RENDERER ─────────────────────────────────
+function renderSummary(raw) {
+  try {
+    const d = parseAIJson(raw);
+    if (typeof d !== 'object' || !d.projectStatus) throw new Error('invalid');
+
+    const ragPill = val => {
+      const v = (val||'').toLowerCase();
+      const cls = v==='red' ? 'r-high' : v==='amber' ? 'r-medium' : v==='green' ? 'r-low' : '';
+      const label = val || '—';
+      return `<span class="risk-lvl ${cls}" style="font-size:10px;letter-spacing:.5px">${esc(label)}</span>`;
+    };
+
+    const statusRows = [
+      { label:'Project Status',  rag:d.projectStatus,  notes:d.projectStatusNotes  },
+      { label:'Schedule Status', rag:d.scheduleStatus, notes:d.scheduleStatusNotes },
+      { label:'Financial Status',rag:d.financialStatus,notes:d.financialStatusNotes},
+      { label:'Scope Status',    rag:d.scopeStatus,    notes:d.scopeStatusNotes    },
+    ];
+
+    const rowsHtml = statusRows.map(r=>`
+      <div class="sum-row">
+        <div class="sum-row-hd">${ragPill(r.rag)}<span class="sum-row-label">${esc(r.label)}</span></div>
+        <div class="sum-row-notes">${esc(r.notes||'—')}</div>
+      </div>`).join('');
+
+    const actHtml = `
+      <div class="sum-act"><div class="sum-act-label">Last 30 Days</div><div class="sum-act-text">${esc(d.last30Days||'—')}</div></div>
+      <div class="sum-act"><div class="sum-act-label">Next 30 Days</div><div class="sum-act-text">${esc(d.next30Days||'—')}</div></div>`;
+
+    return `<div class="sum-grid">${rowsHtml}</div>${actHtml}`;
+  } catch(e) {
+    return renderTextResult(raw);
+  }
+}
+
 // ── PLAIN TEXT RENDERER — structured, readable ───────────────
 function renderTextResult(text) {
   if (!text) return '';
@@ -1609,6 +1672,22 @@ function copyAIResult(type, resultId) {
         text += `${r.detail||r.description||''}\n`;
         text += `Mitigation: ${r.mitigation||r.recommendation||''}\n\n`;
       });
+    } catch(e) { text = raw; }
+
+  } else if (type === 'summary') {
+    try {
+      const d = parseAIJson(raw);
+      text = `PROJECT STATUS SUMMARY — ${P().name||'Project'}\n${'─'.repeat(50)}\n\n`;
+      const rows = [
+        ['PROJECT STATUS',   d.projectStatus,  d.projectStatusNotes  ],
+        ['SCHEDULE STATUS',  d.scheduleStatus, d.scheduleStatusNotes ],
+        ['FINANCIAL STATUS', d.financialStatus,d.financialStatusNotes],
+        ['SCOPE STATUS',     d.scopeStatus,    d.scopeStatusNotes    ],
+      ];
+      rows.forEach(([label, rag, notes]) => {
+        text += `${label}: ${rag||'—'}\n${notes||''}\n\n`;
+      });
+      text += `LAST 30 DAYS\n${d.last30Days||'—'}\n\nNEXT 30 DAYS\n${d.next30Days||'—'}\n`;
     } catch(e) { text = raw; }
 
   } else if (type === 'extract') {
