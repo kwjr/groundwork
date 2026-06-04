@@ -509,8 +509,26 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
       <div class="field"><label>Attendees</label><input type="text" id="mAttendees" placeholder="Comma-separated names or roles"></div>
       <div class="field"><label>Notes</label><textarea id="mNotes" rows="9" placeholder="Key discussion points, topics covered, context…"></textarea></div>
       <div class="two-col">
-        <div class="field"><label>Decisions Made</label><textarea id="mDecisions" rows="4" placeholder="One decision per line…"></textarea></div>
-        <div class="field"><label>Action Items</label><textarea id="mActions" rows="4" placeholder="Owner: Action (due date)&#10;e.g. Kenneth: Review data mapping by Fri"></textarea></div>
+        <div class="field">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <label style="margin:0">Decisions Made</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0">
+              <span>Log to Decisions</span>
+              <label class="toggle" style="width:32px;height:18px"><input type="checkbox" id="mLogDecisions"><span class="toggle-track"></span></label>
+            </label>
+          </div>
+          <textarea id="mDecisions" rows="4" placeholder="One decision per line…"></textarea>
+        </div>
+        <div class="field">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+            <label style="margin:0">Action Items</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0">
+              <span>Log to Actions</span>
+              <label class="toggle" style="width:32px;height:18px"><input type="checkbox" id="mLogActions"><span class="toggle-track"></span></label>
+            </label>
+          </div>
+          <textarea id="mActions" rows="4" placeholder="Owner: Action (due date)&#10;e.g. Kenneth: Review data mapping by Fri"></textarea>
+        </div>
       </div>
       <div class="mtg-form-footer">
         <button class="btn btn-ghost" onclick="closeMtgModal()">Discard</button>
@@ -1137,8 +1155,10 @@ function openMtgModal(id=null) {
   document.getElementById('mTitle').value=m?m.title:'';
   document.getElementById('mAttendees').value=m?m.attendees:'';
   document.getElementById('mNotes').value=m?m.notes:'';
-  document.getElementById('mDecisions').value=m?m.decisions:'';
-  document.getElementById('mActions').value=m?m.actions:'';
+  document.getElementById('mDecisions').value = m?m.decisions:'';
+  document.getElementById('mActions').value   = m?m.actions:'';
+  document.getElementById('mLogDecisions').checked = false;
+  document.getElementById('mLogActions').checked   = false;
   // reset template selection
   document.querySelectorAll('.tmpl-btn').forEach(b=>b.classList.remove('active'));
   document.querySelector('.tmpl-btn').classList.add('active');
@@ -1176,33 +1196,37 @@ function saveMtg() {
   if (!id) {
     const source = m.title + (m.date ? ' · ' + m.date : '');
 
-    // Decisions → Decisions tab
-    parseListItems(m.decisions).forEach(text => {
-      P().decisions.unshift({
-        id:uid(), date:m.date||today(), madeBy:'', status:'final',
-        text, rationale:`From meeting: ${source}`, impact:'',
-        loggedToPSA:false, psaDate:''
+    // Decisions → Decisions tab (only if toggle is on)
+    if (document.getElementById('mLogDecisions').checked) {
+      parseListItems(m.decisions).forEach(text => {
+        P().decisions.unshift({
+          id:uid(), date:m.date||today(), madeBy:'', status:'final',
+          text, rationale:`From meeting: ${source}`, impact:'',
+          loggedToPSA:false, psaDate:''
+        });
+        nd++;
       });
-      nd++;
-    });
+    }
 
-    // Actions → Actions tab
-    const actionNow = now;
-    parseListItems(m.actions).forEach(line => {
-      let owner='', text=line, dueDate='';
-      const ci = line.indexOf(': ');
-      if (ci>0 && ci<25) { owner=line.slice(0,ci).trim(); text=line.slice(ci+2).trim(); }
-      const dm = text.match(/\(Due:\s*([^)]+)\)\s*$/i);
-      if (dm) { dueDate=dm[1].trim(); text=text.slice(0,dm.index).trim(); }
-      P().actions.unshift({
-        id:nextActionId(), text, owner, dueDate,
-        priority:'Medium', status:'Open',
-        source, sourceId:m.id,
-        createdAt:actionNow, updatedAt:actionNow, completedAt:'',
-        loggedToPSA:false, psaDate:'', notes:''
+    // Actions → Actions tab (only if toggle is on)
+    if (document.getElementById('mLogActions').checked) {
+      const actionNow = now;
+      parseListItems(m.actions).forEach(line => {
+        let owner='', text=line, dueDate='';
+        const ci = line.indexOf(': ');
+        if (ci>0 && ci<25) { owner=line.slice(0,ci).trim(); text=line.slice(ci+2).trim(); }
+        const dm = text.match(/\(Due:\s*([^)]+)\)\s*$/i);
+        if (dm) { dueDate=dm[1].trim(); text=text.slice(0,dm.index).trim(); }
+        P().actions.unshift({
+          id:nextActionId(), text, owner, dueDate,
+          priority:'Medium', status:'Open',
+          source, sourceId:m.id,
+          createdAt:actionNow, updatedAt:actionNow, completedAt:'',
+          loggedToPSA:false, psaDate:'', notes:''
+        });
+        na++;
       });
-      na++;
-    });
+    }
   }
 
   save(); closeMtgModal(); renderMeetings(); updateCounts();
