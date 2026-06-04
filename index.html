@@ -509,23 +509,23 @@ mark.hl{background:rgba(251,191,36,.22);border-radius:2px;color:var(--amber)}
       <div class="field"><label>Attendees</label><input type="text" id="mAttendees" placeholder="Comma-separated names or roles"></div>
       <div class="field"><label>Notes</label><textarea id="mNotes" rows="9" placeholder="Key discussion points, topics covered, context…"></textarea></div>
       <div class="two-col">
-        <div class="field">
+      <div class="field">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
             <label style="margin:0">Decisions Made</label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0">
-              <span>Log to Decisions</span>
-              <label class="toggle" style="width:32px;height:18px"><input type="checkbox" id="mLogDecisions"><span class="toggle-track"></span></label>
-            </label>
+            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
+              <span style="font-size:11px;font-weight:500;color:var(--text-muted)">Log to Decisions</span>
+              <label class="toggle"><input type="checkbox" id="mLogDecisions"><span class="toggle-track"></span></label>
+            </div>
           </div>
           <textarea id="mDecisions" rows="4" placeholder="One decision per line…"></textarea>
         </div>
         <div class="field">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
             <label style="margin:0">Action Items</label>
-            <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;color:var(--text-muted);cursor:pointer;text-transform:none;letter-spacing:0">
-              <span>Log to Actions</span>
-              <label class="toggle" style="width:32px;height:18px"><input type="checkbox" id="mLogActions"><span class="toggle-track"></span></label>
-            </label>
+            <div style="display:flex;align-items:center;gap:7px;flex-shrink:0">
+              <span style="font-size:11px;font-weight:500;color:var(--text-muted)">Log to Actions</span>
+              <label class="toggle"><input type="checkbox" id="mLogActions"><span class="toggle-track"></span></label>
+            </div>
           </div>
           <textarea id="mActions" rows="4" placeholder="Owner: Action (due date)&#10;e.g. Kenneth: Review data mapping by Fri"></textarea>
         </div>
@@ -1247,7 +1247,9 @@ function delMtg(id) {
 function renderMeetings() {
   const q=(document.getElementById('q-meetings').value||'').toLowerCase();
   const el=document.getElementById('meetings-list');
-  const filtered=P().meetings.filter(m=>!q||[m.title,m.notes,m.attendees,m.decisions,m.actions].join(' ').toLowerCase().includes(q));
+  const filtered=P().meetings
+    .filter(m=>!q||[m.title,m.notes,m.attendees,m.decisions,m.actions].join(' ').toLowerCase().includes(q))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   if(!filtered.length){
     el.innerHTML=`<div class="empty">
       <div class="empty-ico">📝</div>
