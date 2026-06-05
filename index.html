@@ -1398,7 +1398,7 @@ function buildCtx() {
 }
 
 const PROMPTS={
-  risks:       ctx=>({system:`Analyze project risks and return ONLY a JSON array. Each: {"level":"high"|"medium"|"low","risk":"short title","detail":"1-2 sentences","mitigation":"concrete mitigation"}. ONLY valid JSON.`,user:`Identify risks:\n\n${ctx}`}),
+  risks:       ctx=>({system:`Analyze project risks and return ONLY a JSON array. Each object must have exactly these keys: {"issueName":"short descriptive name","issueDescription":"1-2 sentence explanation of the risk","potentialImpact":"specific impact on scope, schedule, budget, or quality if risk occurs","likelihood":"High"|"Medium"|"Low","mitigationPlan":"concrete actions to prevent or reduce the risk"}. ONLY valid JSON, no markdown.`,user:`Identify risks:\n\n${ctx}`}),
   agenda:      ctx=>({system:`Generate a structured next-meeting agenda as plain text with time-boxed sections. Tie items to actual project content. Be specific.`,user:`Next meeting agenda:\n\n${ctx}`}),
   summary:     ctx=>({system:`You are a project status analyst. Return ONLY a valid JSON object with these exact keys — no markdown, no preamble, no extra text:
 {
@@ -1708,15 +1708,20 @@ function renderRisks(raw) {
   try {
     const risks = parseAIJson(raw);
     if (!Array.isArray(risks)) throw new Error('not array');
-    return risks.map(r => `
-      <div class="risk-row">
-        <span class="risk-lvl r-${(r.level||'').toLowerCase()}">${esc(r.level||'?')}</span>
-        <div>
-          <div class="risk-title">${esc(r.risk||r.title||'')}</div>
-          <div class="risk-detail">${esc(r.detail||r.description||'')}</div>
-          <div class="risk-mit">→ ${esc(r.mitigation||r.recommendation||'')}</div>
+    return risks.map(r => {
+      const lh  = (r.likelihood||r.level||'').toLowerCase();
+      const cls = lh==='high' ? 'r-high' : lh==='medium' ? 'r-medium' : lh==='low' ? 'r-low' : '';
+      const lbl = r.likelihood || r.level || '?';
+      return `<div class="risk-row">
+        <span class="risk-lvl ${cls}" style="white-space:nowrap">${esc(lbl)}</span>
+        <div style="flex:1;min-width:0">
+          <div class="risk-title">${esc(r.issueName||r.risk||r.title||'')}</div>
+          <div class="risk-detail" style="margin-top:3px">${esc(r.issueDescription||r.detail||r.description||'')}</div>
+          ${r.potentialImpact ? `<div class="risk-detail" style="margin-top:4px"><strong style="color:var(--text-muted)">Impact:</strong> ${esc(r.potentialImpact)}</div>` : ''}
+          <div class="risk-mit" style="margin-top:4px"><strong>Mitigation:</strong> ${esc(r.mitigationPlan||r.mitigation||r.recommendation||'')}</div>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   } catch(e) {
     return renderTextResult(raw);
   }
@@ -1867,9 +1872,11 @@ function copyAIResult(type, resultId) {
       const risks = parseAIJson(raw);
       text = `RISK ANALYSIS — ${P().name||'Project'}\n${'─'.repeat(50)}\n\n`;
       risks.forEach(r => {
-        text += `${(r.level||'?').toUpperCase()} RISK: ${r.risk||r.title||''}\n`;
-        text += `${r.detail||r.description||''}\n`;
-        text += `Mitigation: ${r.mitigation||r.recommendation||''}\n\n`;
+        text += `Issue: ${r.issueName||r.risk||r.title||''}\n`;
+        text += `Description: ${r.issueDescription||r.detail||r.description||''}\n`;
+        text += `Potential Impact: ${r.potentialImpact||'\u2014'}\n`;
+        text += `Likelihood: ${r.likelihood||r.level||'?'}\n`;
+        text += `Mitigation Plan: ${r.mitigationPlan||r.mitigation||r.recommendation||''}\n\n`;
       });
     } catch(e) { text = raw; }
 
