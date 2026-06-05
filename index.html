@@ -1420,6 +1420,12 @@ Rules: Status values must be exactly "Green", "Amber", or "Red". Each notes/acti
   stakeholder: ctx=>({system:`Draft a concise internal project update email (150-200 words) for the executive sponsor. Direct professional tone. Include: current phase, accomplishments, decisions needed, top risks, next milestones, and a clear ask if action needed. Include subject line.`,user:`Draft sponsor update:\n\n${ctx}`}),
   debrief:     (ctx,notes)=>({system:`You are a project coordinator writing a structured meeting debrief. Use these EXACT section headers (written in ALL CAPS) in this order:
 
+MEETING DATE
+The date of the meeting in YYYY-MM-DD format. Extract from the transcript if mentioned. If not identifiable, write "Not identified".
+
+MEETING DURATION
+The meeting duration (e.g. "60 min", "1.5 hours"). Extract from the transcript if mentioned. If not identifiable, write "Not identified".
+
 ATTENDEES
 List every participant identified in the transcript — names and/or roles. If no names are identifiable, write "Not identified".
 
@@ -1965,6 +1971,8 @@ function saveDebriefAsMeeting(resultId) {
   const attendeesRaw = findSection('ATTEND');
   const decisionsRaw = findSection('DECISION');
   const actionsRaw   = findSection('ACTION');
+  const dateRaw      = findSection('MEETING DATE');
+  const durationRaw  = findSection('DURATION');
   const notes        = entry.raw;
 
   // Normalise attendees to a comma-separated string for the Attendees field
@@ -2009,7 +2017,10 @@ function saveDebriefAsMeeting(resultId) {
   switchTab('meetings');
   setTimeout(() => {
     openMtgModal();
-    document.getElementById('mDate').value      = today();
+    // Use extracted date if valid YYYY-MM-DD, otherwise default to today
+    const extractedDate = dateRaw && /^\d{4}-\d{2}-\d{2}$/.test(dateRaw.trim()) ? dateRaw.trim() : today();
+    document.getElementById('mDate').value      = extractedDate;
+    document.getElementById('mDur').value       = durationRaw || '';
     document.getElementById('mTitle').value     = '';
     document.getElementById('mAttendees').value = attendeeText;
     document.getElementById('mNotes').value     = notes;
